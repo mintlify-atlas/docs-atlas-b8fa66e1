@@ -1,0 +1,770 @@
+---
+title: "Node — Base Lua API for All Polyphase Nodes"
+sidebarTitle: "Node"
+description: "Every node in Polyphase inherits these methods: lifecycle, hierarchy, visibility, tagging, signals, networking, and script attachment."
+---
+
+Every object that lives in a Polyphase world — from a 3D mesh to a UI button — is a `Node`. This page documents every method on the base `Node` class. All other node types (Node3D, Widget, etc.) inherit these methods in addition to their own.
+
+---
+
+## Construction & Destruction
+
+### `Node.Construct(className)`
+
+Construct a new node from a class name. Also callable as `Node.New(className)`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `className` | `string` | Class to instantiate, e.g. `"Node3D"`, `"Primitive3D"`, `"Text"`. Defaults to `"Node"`. |
+
+**Returns:** `Node` — the newly constructed node.
+
+```lua
+local box = Node.Construct("Box3D")
+```
+
+---
+
+### `Node.Destruct(node)`
+
+Immediately destruct a node and make it unusable.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `node` | `Node` | The node to destroy. |
+
+<Warning>Prefer `Node:DestroyDeferred()` for safety during a frame tick. Destroying a node immediately can cause issues if other code still holds a reference to it.</Warning>
+
+---
+
+### `Node:DestroyDeferred()`
+
+Destroy this node at the end of the current frame. Safer than `Destruct` when called mid-tick.
+
+**Aliases:** `Doom`, `SetPendingDestroy`
+
+```lua
+-- Destroy this enemy at end of frame
+self:DestroyDeferred()
+```
+
+---
+
+### `Node:IsDestroyed()`
+
+Check if the node has been destroyed.
+
+**Returns:** `boolean` — `true` if the node has been destroyed.
+
+---
+
+### `Node:IsPendingDestroy()`
+
+Check if the node is marked for destruction at the end of the frame.
+
+**Alias:** `IsDoomed`
+
+**Returns:** `boolean` — `true` if marked for destruction.
+
+---
+
+### `Node:IsValid()`
+
+Check whether the node reference is valid. When the engine is compiled with `LUA_SAFE_NODE`, returns `false` for stale handles.
+
+**Returns:** `boolean` — `true` if the node is valid.
+
+---
+
+## Naming
+
+### `Node:GetName()`
+
+Get this node's name. Names must be unique among siblings.
+
+**Returns:** `string` — the node's name.
+
+---
+
+### `Node:SetName(name)`
+
+Set this node's name. If a sibling already has the same name, a unique suffix is appended automatically.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Desired name. |
+
+```lua
+local enemy = Node.Construct("Node3D")
+enemy:SetName("Enemy_01")
+Log.Debug(enemy:GetName())  -- "Enemy_01"
+```
+
+---
+
+## Lifecycle & Ticking
+
+### `Node:SetActive(active)`
+
+Enable or disable the node. Inactive nodes do not tick, and their children never tick even if the children are individually marked active.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `active` | `boolean` | New active status. |
+
+---
+
+### `Node:IsActive(recurse)`
+
+Check if the node is active.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `recurse` | `boolean` | If `true`, also check ancestor nodes. Defaults to `false`. |
+
+**Returns:** `boolean` — active status.
+
+---
+
+### `Node:Start()`
+
+Manually invoke the `Start()` function on this node if it has not been started yet. Normally called automatically on the node's first tick. Use this to control start order.
+
+---
+
+### `Node:HasStarted()`
+
+Check if the node has already had `Start()` called.
+
+**Returns:** `boolean` — `true` if started.
+
+---
+
+### `Node:EnableTick(enable)`
+
+Set whether this node's `Tick()` callback is called each frame.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enable` | `boolean` | Whether to tick. |
+
+---
+
+### `Node:IsTickEnabled()`
+
+Check if the tick is enabled.
+
+**Returns:** `boolean` — `true` if `Tick()` will be called.
+
+---
+
+### `Node:EnableLateTick(lateTick)`
+
+Enable late tick. A late-ticking node ticks *after* all its children rather than before them.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `lateTick` | `boolean` | `true` to tick after children. |
+
+---
+
+### `Node:IsLateTickEnabled()`
+
+Check if late tick is enabled.
+
+**Returns:** `boolean` — `true` if node ticks after its children.
+
+---
+
+## Visibility
+
+### `Node:SetVisible(visible)`
+
+Set the node's visibility. Invisible nodes are not rendered; their children are also hidden.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `visible` | `boolean` | Whether to render this node. |
+
+---
+
+### `Node:IsVisible(recurse)`
+
+Check if the node is visible.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `recurse` | `boolean` | If `true`, checks all ancestor nodes too. Defaults to `false`. |
+
+**Returns:** `boolean` — visibility status.
+
+```lua
+if not self:IsVisible(true) then
+    -- This node or an ancestor is hidden
+end
+```
+
+---
+
+## Persistence
+
+### `Node:SetPersistent(persistent)`
+
+Make the node persistent. A persistent node survives world clears and root-node changes; it is only removed when explicitly destroyed.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `persistent` | `boolean` | Whether to persist. |
+
+---
+
+### `Node:IsPersistent()`
+
+Check if the node is persistent.
+
+**Returns:** `boolean` — `true` if persistent.
+
+---
+
+## World & Screen
+
+### `Node:GetWorld()`
+
+Get the `World` this node currently belongs to.
+
+**Returns:** `World` — the current world, or `nil` if the node is not in a world.
+
+---
+
+### `Node:SetTargetScreen(screen)`
+
+On Nintendo 3DS, set which screen this node's subtree renders on. Use the `TargetScreen` table: `TargetScreen.Top` (0), `TargetScreen.Bottom` (1), or `TargetScreen.All` (255). Has no effect on single-screen platforms.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `screen` | `integer` | Target screen constant. |
+
+---
+
+### `Node:GetTargetScreen()`
+
+Get the resolved screen this node renders on.
+
+**Returns:** `integer` — a `TargetScreen` value.
+
+---
+
+### `Node:GetScreenResolution()`
+
+Get the screen resolution for the screen this node renders on. A node set to `TargetScreen.All` reports the main screen resolution.
+
+**Returns:** `Vector` — resolution with width in `.x` and height in `.y`.
+
+---
+
+## Hierarchy
+
+### `Node:GetParent()`
+
+Get this node's parent.
+
+**Returns:** `Node` — the parent node.
+
+---
+
+### `Node:Attach(parent, keepWorldTransform, childIndex)`
+
+Reparent this node to a new parent.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `parent` | `Node` | New parent. Pass `nil` to detach. |
+| `keepWorldTransform` | `boolean` | Preserve world-space transform. Defaults to `false`. |
+| `childIndex` | `integer` | Position in parent's child array. `0` appends at end. |
+
+---
+
+### `Node:Detach(keepWorldTransform)`
+
+Detach this node from its parent (equivalent to `Attach(nil)`).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `keepWorldTransform` | `boolean` | Preserve world-space transform. Defaults to `false`. |
+
+---
+
+### `Node:GetChild(index)`
+
+Get a child node by index.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `integer` | Child index. |
+
+**Returns:** `Node` — the child node, or `nil` if index is out of range.
+
+---
+
+### `Node:GetChildByType(typeName)`
+
+Get the first child of a given type.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `typeName` | `string` | Type name, e.g. `"Node3D"`, `"Text"`. |
+
+**Returns:** `Node` — first matching child, or `nil`.
+
+---
+
+### `Node:GetNumChildren()`
+
+Get the number of direct children.
+
+**Returns:** `integer` — child count.
+
+---
+
+### `Node:AddChild(newChild, index)`
+
+Parent the given node to this node.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `newChild` | `Node` | The node to add as a child. |
+| `index` | `integer` | Insertion position. `0` appends at end. |
+
+---
+
+### `Node:RemoveChild(childIndexOrName)`
+
+Remove a child by index or name.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `childIndexOrName` | `integer\|string` | Index or name of the child to remove. |
+
+---
+
+### `Node:FindChild(name, recurse)`
+
+Find a child by name.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Name to search for. |
+| `recurse` | `boolean` | Search all descendants. Defaults to `false`. |
+
+**Returns:** `Node` — matching node, or `nil`.
+
+---
+
+### `Node:FindChildWithTag(tag, recurse)`
+
+Find the first child that has the given tag.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `tag` | `string` | Tag to search for. |
+| `recurse` | `boolean` | Search all descendants. Defaults to `false`. |
+
+**Returns:** `Node` — matching node, or `nil`.
+
+---
+
+### `Node:FindDescendant(name)`
+
+Recursively search all descendants for a node by name. Equivalent to `FindChild(name, true)`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Descendant name to find. |
+
+**Returns:** `Node` — found node, or `nil`.
+
+---
+
+### `Node:FindAncestor(name)`
+
+Walk up the tree to find an ancestor by name.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Ancestor name. |
+
+**Returns:** `Node` — found ancestor, or `nil`.
+
+---
+
+### `Node:HasAncestor(node)`
+
+Check if the given node is an ancestor of this node.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `node` | `Node` | Node to check. |
+
+**Returns:** `boolean` — `true` if `node` is an ancestor.
+
+---
+
+### `Node:GetRoot()`
+
+Get the topmost ancestor of this node (the first node with no parent).
+
+**Returns:** `Node` — root node of this tree.
+
+---
+
+### `Node:IsWorldRoot()`
+
+Check if this node is the world's root node.
+
+**Returns:** `boolean` — `true` if this node is the world root.
+
+---
+
+## Traversal
+
+### `Node:Traverse(func, inverted)`
+
+Execute a function on this node and all its descendants. Return `true` from `func` to continue into children; return `false` to skip that subtree.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `func` | `function` | Called with each node as the sole argument. |
+| `inverted` | `boolean` | If `true`, process leaf nodes before their parents. |
+
+```lua
+-- Print names of all visible nodes
+node:Traverse(function(n)
+    if n:IsVisible() then
+        Log.Debug(n:GetName())
+        return true
+    end
+    return false
+end)
+```
+
+---
+
+### `Node:ForEach(func, inverted)`
+
+Like `Traverse`, but returning `false` from `func` breaks iteration entirely rather than just skipping children.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `func` | `function` | Return `true` to continue, `false` to stop iteration. |
+| `inverted` | `boolean` | Leaf-first traversal if `true`. |
+
+**Returns:** `boolean` — `true` if all nodes were visited, `false` if iteration was cut short.
+
+---
+
+## Creating & Cloning
+
+### `Node:CreateChild(className)`
+
+Construct a new node of the given class and parent it to this node.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `className` | `string` | Class name to instantiate. |
+
+**Returns:** `Node` — the newly created child, or `nil` on failure.
+
+```lua
+local bullet = world:CreateChild("Sphere3D")
+bullet:SetName("Bullet")
+```
+
+---
+
+### `Node:CreateChildClone(srcNode, recurse)`
+
+Clone `srcNode` and parent the clone to this node.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `srcNode` | `Node` | Source node to copy from. |
+| `recurse` | `boolean` | Whether to also clone child nodes. |
+
+**Returns:** `Node` — newly cloned node.
+
+---
+
+### `Node:Clone(srcNode, recurse)`
+
+Create a detached copy of `srcNode`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `srcNode` | `Node` | Source node. |
+| `recurse` | `boolean` | Whether to clone children as well. |
+
+**Returns:** `Node` — newly created clone.
+
+---
+
+## Destroying Children
+
+### `Node:DestroyChild(nameOrIndex)`
+
+Destroy a child by name or index.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `nameOrIndex` | `string\|integer` | Name or index of the child to destroy. |
+
+---
+
+### `Node:DestroyAllChildren()`
+
+Destroy all direct children of this node.
+
+---
+
+## Unique ID
+
+### `Node:GetNodeId()`
+
+Get this node's unique numeric ID.
+
+**Returns:** `integer` — node identifier.
+
+---
+
+## Tags
+
+### `Node:HasTag(tag)`
+
+Check whether this node has a specific tag.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `tag` | `string` | Tag string to check. |
+
+**Returns:** `boolean` — `true` if the tag is assigned.
+
+---
+
+### `Node:AddTag(tag)`
+
+Assign a tag to this node.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `tag` | `string` | Tag to add. |
+
+---
+
+### `Node:RemoveTag(tag)`
+
+Remove a tag from this node.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `tag` | `string` | Tag to remove. |
+
+---
+
+## Signals
+
+### `Node:EmitSignal(signalName, args...)`
+
+Broadcast a named signal on this node. Any listeners connected via `ConnectSignal` will be invoked.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `signalName` | `string` | Name of the signal. |
+| `args...` | `any` | Arguments passed to all listener callbacks. |
+
+<Note>Node signals are separate from `Signal:Create()` objects and `SignalBus`. They do not cross-talk. See the Signal page for guidance on which system to use.</Note>
+
+---
+
+### `Node:ConnectSignal(signalName, listener, func)`
+
+Connect a listener to a signal on this node.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `signalName` | `string` | Name of the signal to listen to. |
+| `listener` | `Node` | The node that will react to the signal. |
+| `func` | `function` | Member function on the listener to invoke. |
+
+```lua
+function HealthBar:OnHealthChanged(newHp)
+    self.quad:SetXRatio(newHp / Player.MaxHp)
+end
+
+function HealthBar:Start()
+    GetPlayer():ConnectSignal("healthChanged", self, HealthBar.OnHealthChanged)
+end
+```
+
+---
+
+### `Node:DisconnectSignal(signalName, listener)`
+
+Disconnect a listener from a signal.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `signalName` | `string` | Signal name. |
+| `listener` | `Node` | Node to disconnect. |
+
+---
+
+## Scene Asset
+
+### `Node:GetScene()`
+
+Return the `Scene` asset this node was instantiated from, if any.
+
+**Returns:** `Scene` — the associated scene asset, or `nil`.
+
+---
+
+## Scripting
+
+### `Node:SetScript(filename)`
+
+Attach a Lua script file to this node.
+
+**Alias:** `SetScriptFile`
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `filename` | `string` | Path to the script file. |
+
+---
+
+## Networking
+
+### `Node:GetNetId()`
+
+Get the network ID assigned to this node during a multiplayer session. `0` means no ID assigned.
+
+**Returns:** `integer` — net ID.
+
+---
+
+### `Node:GetOwningHost()`
+
+Get the host ID that owns this node.
+
+**Returns:** `integer` — owning host ID.
+
+---
+
+### `Node:SetOwningHost(hostId)`
+
+Set which host owns this node. Should only be called on the server.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `hostId` | `integer` | Host ID to assign ownership to. |
+
+---
+
+### `Node:SetReplicate(replicate)`
+
+Enable or disable network replication for this node.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `replicate` | `boolean` | `true` to replicate. |
+
+---
+
+### `Node:IsReplicated()`
+
+**Returns:** `boolean` — `true` if replicated.
+
+---
+
+### `Node:SetReplicateTransform(replicateTransform)`
+
+Set whether position/rotation/scale should be replicated.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `replicateTransform` | `boolean` | `true` to replicate transform. |
+
+---
+
+### `Node:IsTransformReplicated()`
+
+**Returns:** `boolean` — `true` if transform is replicated.
+
+---
+
+### `Node:ForceReplication()`
+
+Force property replication on the next network update even if nothing changed.
+
+---
+
+### `Node:HasAuthority()`
+
+Check whether this host is the server (has network authority).
+
+**Returns:** `boolean` — `true` if this is the server.
+
+---
+
+### `Node:IsOwned()`
+
+Check if this host owns this node.
+
+**Returns:** `boolean` — `true` if owned by the local host.
+
+---
+
+### `Node:SetAlwaysRelevant(alwaysRelevant)`
+
+Set whether this node should always be replicated to all clients regardless of distance or visibility.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `alwaysRelevant` | `boolean` | Always-relevant flag. |
+
+---
+
+### `Node:IsAlwaysRelevant()`
+
+**Returns:** `boolean` — always-relevant status.
+
+---
+
+### `Node:InvokeNetFunc(name, arg1, ..., arg8)`
+
+Invoke a remote procedure call on this node. The function must be registered in `GatherNetFuncs()`. Up to 8 arguments may be passed.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Name of the net function. |
+| `arg1..arg8` | `any` | Arguments to pass. |
+
+---
+
+## Type Checking
+
+### `Node:CheckType(className)`
+
+Check whether this node is of a given type.
+
+**Aliases:** `Is`, `IsA`
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `className` | `string` | Type name to check, e.g. `"Primitive3D"`. |
+
+```lua
+if self:IsA("Primitive3D") then
+    self:EnablePhysics(true)
+end
+```

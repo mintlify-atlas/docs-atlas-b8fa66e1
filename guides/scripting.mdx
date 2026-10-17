@@ -1,0 +1,246 @@
+---
+title: "Lua Scripting in Polyphase Engine"
+sidebarTitle: "Scripting"
+description: "Learn how to write Lua scripts for Polyphase Engine: file structure, lifecycle callbacks, properties, network replication, and RPCs."
+---
+
+Polyphase Engine uses Lua as its scripting language. Any node in your scene can have a single Lua script assigned to it, giving that node custom logic and inspector-editable properties. Scripts are hot-reloaded during development and packaged with your game at build time.
+
+## Script File Structure
+
+Every script file must define a Lua table with the **same name as the file**. For example, the first line of `Rotator.lua` must be:
+
+```lua
+Rotator = {}
+```
+
+<Note>
+Script table names must be globally unique across your entire project, even if the files live in different subdirectories. You cannot have both `Scripts/Test.lua` and `Scripts/Test/Test.lua`.
+</Note>
+
+## Script Directory and Assignment
+
+All scripts must be placed inside your project's `Scripts/` directory. When assigning a script to a node in the editor, enter the path **relative to the Scripts directory**, omitting the `.lua` extension.
+
+| Script location | Value to enter in "Script" field |
+|---|---|
+| `Scripts/Player.lua` | `Player` |
+| `Scripts/Monsters/Goblin.lua` | `Monsters/Goblin` |
+
+## Assigning Scripts to Nodes
+
+A script can be assigned to any node type. As a general rule, assign a given script only to nodes of the same type. The reason is that your script table inherits from whichever node type it is first placed on. If `EventTrigger.lua` is first assigned to a `Box3D`, its table inherits `Box3D` methods. Placing it on a `Sphere3D` afterwards will trigger a `"Multiple inheritance chains used for same script"` warning, and calling `self:GetRadius()` will throw an error while `self:GetExtents()` remains valid.
+
+---
+
+## Lifecycle Callbacks
+
+The engine calls these functions automatically at specific points in a node's lifetime. All are optional — define only the ones your script needs.
+
+<Note>
+All callback functions are defined as methods on your script table using the `function TableName:FunctionName()` syntax so that `self` refers to the node the script is running on.
+</Note>
+
+### `Create()`
+
+Called when the script is first created, **before** any properties have been serialized from the scene file. Use this to initialize member variables to safe defaults.
+
+```lua
+function Coin:Create()
+    self.angularVelocity = Vec()
+end
+```
+
+### `Awake()`
+
+Called **after** script properties have been serialized. At this point, any values you configured in the editor are available on `self`.
+
+```lua
+function Coin:Awake()
+    -- self.angularVelocity now holds the value set in the editor
+end
+```
+
+### `Start()`
+
+Called on the **first frame** this script will tick. Use this for any setup that requires other nodes in the world to already exist.
+
+```lua
+function Coin:Start()
+    -- World is fully loaded; safe to find other nodes
+end
+```
+
+### `Stop()`
+
+Called when the script is destroyed. Use this to clean up timers, connections, or any allocated resources.
+
+```lua
+function Coin:Stop()
+    -- Clean up
+end
+```
+
+### `Tick(deltaTime)`
+
+Called **every frame** during gameplay. `deltaTime` is a number representing the time in seconds since the last frame. This is the main update function for game logic.
+
+```lua
+function Coin:Tick(deltaTime)
+    self:AddRotation(self.angularVelocity * deltaTime)
+end
+```
+
+### `EditorTick(deltaTime)`
+
+Similar to `Tick()`, but called **in the editor while not playing**. Useful for previewing animations or procedural placement in the viewport.
+
+```lua
+function Coin:EditorTick(deltaTime)
+    self:AddRotation(self.angularVelocity * deltaTime)
+end
+```
+
+### `BeginOverlap(thisNode, otherNode)`
+
+Called when a node begins to overlap this node or one of its descendants. Both `thisNode` and `otherNode` are `Primitive3D` instances.
+
+```lua
+function Coin:BeginOverlap(thisNode, otherNode)
+    -- otherNode entered our collision volume
+end
+```
+
+### `EndOverlap(thisNode, otherNode)`
+
+Called when a node stops overlapping this node or one of its descendants. Both parameters are `Primitive3D` instances.
+
+```lua
+function Coin:EndOverlap(thisNode, otherNode)
+    -- otherNode left our collision volume
+end
+```
+
+### `OnCollision(thisNode, otherNode, impactPoint, impactNormal)`
+
+Called when a node collides with this node or one of its descendants. `thisNode` and `otherNode` are `Primitive3D` instances. `impactPoint` is a `Vector` containing the world-space position of impact; `impactNormal` is a `Vector` containing the world-space normal at the point of impact.
+
+```lua
+function Coin:OnCollision(thisNode, otherNode, impactPoint, impactNormal)
+    -- React to physics collision
+end
+```
+
+---
+
+## GatherProperties()
+
+`GatherProperties()` lets you define custom properties that are displayed and editable in the editor's Inspector panel. These properties are also serialized when saving and loading scenes.
+
+```lua
+function Bomber:GatherProperties()
+    return
+    {
+        { name = "moveSpeed",  type = DatumType.Float },
+        { name = "bombScene",  type = DatumType.Asset },
+        { name = "targets",    type = DatumType.Node3D, array = true },
+        { name = "waypoints",  type = DatumType.Widget, array = true },
+    }
+end
+```
+
+Set `array = true` to create an array property. In the editor the `+` button appends elements and the red **×** button removes them.
+
+### DatumType Values
+
+| DatumType | Lua type stored |
+|---|---|
+| `DatumType.Integer` | Integer number |
+| `DatumType.Float` | Floating-point number |
+| `DatumType.Bool` | Boolean |
+| `DatumType.String` | String |
+| `DatumType.Vector2D` | 2D vector |
+| `DatumType.Vector` | 3D vector |
+| `DatumType.Color` | RGBA color |
+| `DatumType.Asset` | Asset reference |
+| `DatumType.Byte` | Byte (0–255) |
+| `DatumType.Short` | Short integer |
+| `DatumType.Node` | Node reference |
+
+---
+
+## GatherReplicatedData()
+
+`GatherReplicatedData()` defines which script properties are replicated from the server to clients in a multiplayer game. The syntax mirrors `GatherProperties()`. Provide an `onRep` key with a function name to be called on the client whenever that variable is updated.
+
+```lua
+function Bomber:GatherReplicatedData()
+    return
+    {
+        { name = 'netYaw',       type = DatumType.Float },
+        { name = 'netPosition',  type = DatumType.Vector, onRep = 'OnRep_netPosition' },
+        { name = 'curMoveSpeed', type = DatumType.Float },
+        { name = 'bombCount',    type = DatumType.Byte },
+        { name = 'bombRange',    type = DatumType.Byte },
+        { name = 'moveSpeed',    type = DatumType.Float },
+    }
+end
+
+function Bomber:OnRep_netPosition()
+    -- Called on the client whenever netPosition changes
+end
+```
+
+---
+
+## GatherNetFuncs()
+
+`GatherNetFuncs()` defines Remote Procedure Calls (RPCs) that can be invoked across the network. Set `reliable = true` for functions that must always arrive (e.g. critical game events), and `reliable = false` for high-frequency calls where occasional drops are acceptable (e.g. cosmetic animations).
+
+```lua
+function Bomber:GatherNetFuncs()
+    return
+    {
+        { name = 'S_PlantBomb',          type = NetFuncType.Server,    reliable = true  },
+        { name = 'S_SwingCane',          type = NetFuncType.Server,    reliable = true  },
+        { name = 'S_SyncTransform',      type = NetFuncType.Server,    reliable = false },
+        { name = 'C_ForceWorldPosition', type = NetFuncType.Client,    reliable = true  },
+        { name = 'M_SwingCane',          type = NetFuncType.Multicast, reliable = false },
+    }
+end
+```
+
+### NetFuncType Values
+
+| Value | Behavior |
+|---|---|
+| `NetFuncType.Server` | Executes only on the server |
+| `NetFuncType.Client` | Executes on the owning client |
+| `NetFuncType.Multicast` | Executes on all hosts; must be invoked from the server |
+
+Invoke an RPC at runtime by calling `self:InvokeNetFunc("FunctionName", ...)` with up to eight arguments.
+
+---
+
+## Full Example: Coin.lua
+
+The following is a complete, working script that rotates a coin node each frame using a configurable `angularVelocity` property that can be set per-instance in the editor.
+
+```lua
+Coin = {}
+
+function Coin:Create()
+    self.angularVelocity = Vec()
+end
+
+function Coin:GatherProperties()
+    return
+    {
+        { name = "angularVelocity", type = DatumType.Vector }
+    }
+end
+
+function Coin:Tick(deltaTime)
+    self:AddRotation(self.angularVelocity * deltaTime)
+end
+```

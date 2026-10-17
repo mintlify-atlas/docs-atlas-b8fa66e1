@@ -1,0 +1,458 @@
+---
+title: "Terrain, Voxels, Tiles, Shadows, and Environment"
+sidebarTitle: "Terrain & Voxels"
+description: "Polyphase environment: Terrain3D sculpting and splatmap painting, Voxel3D, TileMap2D, Vulkan shadows, Skybox, InstancedMesh3D, and baked occlusion culling."
+---
+
+Polyphase provides a full suite of environment construction tools — from large outdoor landscapes sculpted from heightmaps, to runtime-editable voxel structures, to grid-based 2D tile maps. Layered on top are rendering features: dynamic directional shadows on Vulkan, skybox support on all platforms, hardware-instanced mesh rendering with console fallbacks, and a baked PVS occlusion culling system that works identically on every target.
+
+## Terrain3D
+
+`Terrain3D` is a heightmap-based terrain node that generates a renderable mesh grid from per-vertex height data. It supports multi-material splatmap painting, procedural splatmap generation from elevation/slope rules, collision, NavMesh integration, heightmap import, and grayscale brush masks.
+
+### Creating a Terrain
+
+Right-click in the scene hierarchy → **Add Node → 3D → Terrain3D**, or right-click in the viewport → **Terrain**. A save dialog appears — navigate to your Assets folder and type a base name (e.g. `MyTerrain`). Two companion files are created:
+
+- `MyTerrain_Splatmap.oct` — placeholder baked splatmap texture
+- `MyTerrain_Heightmap.oct` — grayscale heightmap export
+
+### Basic Sculpting Workflow
+
+<Steps>
+  <Step title="Enter Terrain Sculpt mode">
+    Select the Terrain3D node, then click **"Open In Terrain Sculpt"** in the Properties inspector or select **Terrain Sculpt** from the editor mode dropdown.
+  </Step>
+  <Step title="Sculpt the heightmap">
+    Use **Raise / Lower / Flatten / Smooth** modes with configurable Radius (0.5–50), Strength (0.01–1.0), and Falloff. Assign a grayscale brush mask texture for custom brush shapes by dragging from the Assets panel onto **"Drop Brush Mask Here"**.
+  </Step>
+  <Step title="Set up an atlas texture">
+    Assign an **Atlas Texture** in the inspector, set **Tiles X/Y** to match your atlas grid, and assign tile indices per slot in **Material Slot Tiles**.
+  </Step>
+  <Step title="Paint materials">
+    Switch to **Paint Mat** mode and paint material slot weights across the surface.
+  </Step>
+  <Step title="Bake and save">
+    Click **Bake & Save Map** to export the blended texture. The baked map persists across PIE and runtime builds.
+  </Step>
+</Steps>
+
+### Material System
+
+Terrain3D uses `MaterialLite` exclusively, ensuring compatibility across all platforms including Wii and 3DS.
+
+Each vertex stores 4 material weights packed as RGBA in vertex color (R = Slot 0, G = Slot 1, B = Slot 2, A = Slot 3). Enabling **Bake Splatmap** generates a CPU-blended texture where each pixel is the weighted blend of all 4 atlas tiles — eliminating per-vertex boundaries for smooth material transitions.
+
+| Property | Default | Description |
+|---|---|---|
+| Resolution X / Z | 128 | Grid vertices |
+| World Width / Depth | 128.0 | World-space extent |
+| Height Scale | 10.0 | Height value multiplier |
+| Enable Atlas | false | Enable atlas-based texturing |
+| Tiles X / Y | 4 | Atlas grid dimensions |
+| Bake Resolution | 512 | Baked texture size (N×N) |
+
+### Procedural Splatmap Generation
+
+<CardGroup cols={2}>
+  <Card title="Auto-Generate" icon="wand-magic-sparkles">
+    Per-slot controls for **Height Min/Max** (normalized 0–1), **Slope Min/Max** (degrees), **Blend** (edge softness), and **Strength**. Default rules: Slot 0 = Grass (0–55%, flat), Slot 1 = Rock (any height, steep), Slot 2 = Snow (60–100%), Slot 3 = Dirt (30–70%).
+  </Card>
+  <Card title="Mountain Generate" icon="mountain">
+    Simplified preset with four named zones: Ground (low/flat), Mountain Side (steep slopes), Mountain Top (high flat areas), Peak (highest points). Each zone maps to a configurable slot with shared Blend control.
+  </Card>
+</CardGroup>
+
+### Lua API
+
+```lua
+local terrain = world:SpawnNode("Terrain3D")
+
+-- Set heights from a sine wave
+for x = 0, 127 do
+    for z = 0, 127 do
+        local h = math.sin(x * 0.1) * math.cos(z * 0.1) * 2.0
+        terrain:SetHeight(x, z, h)
+    end
+end
+
+-- Import a heightmap texture
+terrain:SetHeightFromTexture(LoadAsset("T_Heightmap"))
+
+-- Get bilinear-interpolated world height at any position
+local groundY = terrain:GetHeightAtWorldPos(worldX, worldZ)
+
+-- Paint material slot 1 in a region
+for x = 20, 40 do
+    for z = 20, 40 do
+        terrain:SetMaterialWeight(x, z, 1, 1.0)
+        terrain:SetMaterialWeight(x, z, 0, 0.0)
+    end
+end
+
+terrain:RebuildMesh()
+```
+
+### Performance by Platform
+
+| Platform | Recommendation |
+|---|---|
+| Vulkan | 128×128 or larger; atlas mode; full bake resolution |
+| GameCube / Wii (GX) | 64×64 or smaller; automatic batching for meshes > 65,535 indices |
+| 3DS (C3D) | 64×64 or smaller for memory and performance |
+
+<Note>
+  Atlas mode uses approximately 6× more vertices than non-atlas mode due to per-triangle unshared UVs (same approach as Voxel3D). Disable atlas for performance-critical console targets.
+</Note>
+
+---
+
+## Voxel3D
+
+`Voxel3D` is a runtime-editable voxel mesh node for block-based terrain and structures. It uses PolyVox for voxel storage and cubic mesh extraction.
+
+- **Voxel values:** `0` = air (empty), `1–255` = solid material IDs
+- **Default dimensions:** 32×32×32 voxels
+- **RLE compression** in scene files — uniform fills are ~2 bytes; random data worst-case ~65 KB
+
+### Lua API
+
+```lua
+local voxel = world:SpawnNode("Voxel3D")
+voxel:SetPosition(Vec(0, 0, 0))
+
+-- Fill with stone
+voxel:Fill(1)
+
+-- Carve out a sphere of air
+local cx, cy, cz = 16, 16, 16
+local radius = 8
+for x = cx - radius, cx + radius do
+    for y = cy - radius, cy + radius do
+        for z = cz - radius, cz + radius do
+            local dx, dy, dz = x - cx, y - cy, z - cz
+            if dx*dx + dy*dy + dz*dz < radius*radius then
+                voxel:SetVoxel(x, y, z, 0)
+            end
+        end
+    end
+end
+
+-- FillRegion for large areas (more efficient than individual SetVoxel)
+voxel:FillRegion(0, 0, 0, 31, 4, 31, 2)  -- fill a floor layer with dirt
+
+voxel:RebuildMesh()  -- optional; happens automatically on next tick
+```
+
+### Material ID Color Mapping
+
+| ID | Color | ID | Color |
+|---|---|---|---|
+| 0 | Air (not rendered) | 4 | Blue (Water) |
+| 1 | Light Gray (Stone) | 5 | Red |
+| 2 | Brown (Dirt) | 6 | Yellow |
+| 3 | Green (Grass) | 8+ | HSV-based rainbow |
+
+### Platform Notes
+
+Voxel3D has full Vulkan support (Vulkan, Windows, Linux, Android). GameCube/Wii (GX) and 3DS (C3D) are currently **stub implementations** — mesh data exists in memory but is not rendered on those platforms. Console rendering is on the roadmap.
+
+<Warning>
+  Batch multiple `SetVoxel` calls before the next tick to avoid redundant mesh rebuilds. Use `FillRegion` for large areas instead of nested `SetVoxel` loops.
+</Warning>
+
+---
+
+## TileMap2D
+
+`TileMap2D` is a 2D tile-painting system for grid-based games — top-down RPGs, platformers, dungeon crawlers, strategy maps. It ships with a complete editor workflow and a rich runtime Lua query API.
+
+The system is built around three pieces:
+
+<CardGroup cols={2}>
+  <Card title="TileSet asset" icon="grid">
+    Owns the texture atlas, slicing (tile width/height/margin/spacing), per-tile metadata (tags, collision, animation), 9-box brushes, and autotile rule sets.
+  </Card>
+  <Card title="TileMap asset" icon="map">
+    Owns the painted cell data: sparse chunked storage (32×32 cells per chunk), layers with visibility/lock/opacity/Z-order, and used-bounds bookkeeping.
+  </Card>
+  <Card title="TileMap2D node" icon="cube">
+    A `Mesh3D`-derived scene node that renders a `TileMap` asset using chunked vertex meshes bound to the tileset's atlas texture via `MaterialLite`.
+  </Card>
+  <Card title="Tile Paint mode" icon="paintbrush">
+    9 paint tools (Pencil, Eraser, Picker, Rect Fill, Flood Fill, Line, 9-Box, Select, Autotile), freeform selection with copy/cut/paste/flip/rotate, collision/tag overlays, and auto-orthographic camera.
+  </Card>
+</CardGroup>
+
+### Quick Start
+
+<Steps>
+  <Step title="Create a TileSet">
+    Asset browser → **Create Asset → Tile Set**. Assign a texture atlas, set **Atlas Tile Width/Height**, and optionally set margin/spacing. The `mTiles` array auto-populates.
+  </Step>
+  <Step title="Create a TileMap">
+    Asset browser → **Create Asset → Tile Map**. Set **TileSet** and optionally adjust **Cell Size X/Y** (world-space size per cell, default 1×1).
+  </Step>
+  <Step title="Spawn a TileMap2D node">
+    Drop a `TileMap2D` node into the scene and assign your `TileMap` asset in the inspector. Click **"Open In Tile Paint"** — the editor camera snaps to a top-down orthographic view.
+  </Step>
+  <Step title="Paint">
+    In the Tile Paint panel, expand **Tile Palette**, click a tile, select **Pencil**, and click + drag in the viewport. Press **Ctrl+S** to save.
+  </Step>
+</Steps>
+
+### Paint Tools
+
+| Tool | Description |
+|---|---|
+| **Pencil** | Bresenham-interpolated stroke — no gaps when dragging fast |
+| **Eraser** | Clears cells along a Bresenham path |
+| **Picker** | Single-click reads the tile into the selected slot |
+| **Rect Fill** | Drag to fill a rectangle |
+| **Flood Fill** | BFS over connected matching cells (cap: 16384 cells) |
+| **Line** | Drag to stamp a Bresenham line |
+| **9-Box** | Drag a rect; corner/edge/center slots applied per-cell position |
+| **Select** | Freeform selection with Shift (add) / Ctrl (remove); copy/cut/paste/flip/rotate |
+| **Autotile** | Paints and recomputes 8-neighbor tiles according to autotile rule sets |
+
+### Lua Runtime API
+
+```lua
+-- Coordinate conversion
+local cellX, cellY = tileMap:WorldToCell(worldVec)
+local worldVec     = tileMap:CellCenterToWorld(cellX, cellY)
+
+-- Cell query
+local tileIdx = tileMap:GetTile(cellX, cellY)
+tileMap:SetTile(cellX, cellY, 3)
+tileMap:ClearTile(cellX, cellY)
+
+-- Rich cell info
+local cell = tileMap:GetCell(cellX, cellY)
+-- cell.tileIndex, cell.atlasX, cell.atlasY, cell.hasCollision, cell.tags
+
+-- Region search
+local cells = tileMap:GetCellsInRect(x1, y1, x2, y2)
+local cells = tileMap:FindAllTilesWithTag("ground")
+local minX, minY, maxX, maxY = tileMap:GetUsedBounds()
+
+-- Collision
+local isSolid = tileMap:IsSolidAt(worldVec)
+local isSolid = tileMap:IsSolidCell(cellX, cellY)
+
+-- Navigation
+local hit = tileMap:RaycastTiles(startWorld, endWorld)   -- DDA; stops at first solid cell
+local reachable = tileMap:GetReachableCells(startX, startY, 5)  -- BFS, max dist 5
+
+-- Bulk editing
+tileMap:FillRect(0, 0, 15, 15, 3)
+n = tileMap:ReplaceTile(3, 7)            -- returns count of replaced cells
+n = tileMap:ReplaceTilesWithTag("water", 4)
+```
+
+### Platform Notes
+
+Vulkan render path is fully implemented. GameCube/Wii (`API_GX`) and 3DS (`API_C3D`) backends are **no-op stubs** — TileMap2D compiles and loads on retro targets but does not render.
+
+---
+
+## Shadows
+
+Polyphase supports dynamic directional shadows via shadow mapping. A single `DirectionalLight3D` casts depth into a 2048×2048 shadow map; lit materials sample that depth to darken occluded pixels.
+
+### Platform Support
+
+| Platform | Cast | Receive | Notes |
+|---|---|---|---|
+| Windows / Linux (Vulkan) | ✅ | ✅ | Full support — PCF, GPU skinning, MaterialLite + MaterialBase receivers |
+| Android (Vulkan) | ✅ | ✅ | CPU-skinning path for skeletal meshes |
+| GameCube / Wii (GX) | ❌ | ❌ | Use baked lighting instead |
+| 3DS (C3D) | ❌ | ❌ | Use baked lighting instead |
+
+### Three Requirements for a Shadow
+
+1. A `DirectionalLight3D` in the scene with **Cast Shadows** enabled.
+2. The caster mesh has **Cast Shadows = true** on its `Primitive3D` properties (**default is false** — toggle explicitly).
+3. The receiver mesh uses a material that samples the shadow map (`MaterialLite`, `MaterialBase` with the bundled PBR shader, or a custom shader that calls `SampleDirectionalShadow(worldPos)` from `Common.glsl`).
+
+### What Casts Shadows
+
+| Node | Casts |
+|---|---|
+| `StaticMesh3D` | ✅ |
+| `SkeletalMesh3D` | ✅ (CPU and GPU-skinned) |
+| `InstancedMesh3D` | ✅ (uses `ShadowInstanced.vert`) |
+| `Particle3D`, `TileMap2D`, `Terrain3D`, `Voxel3D` | ❌ |
+
+### Configuration (Constants.h)
+
+```cpp
+#define SHADOW_MAP_RESOLUTION 2048   // square shadow map
+#define SHADOW_RANGE          50.0f  // XY ortho half-extent (units, centered on camera)
+#define SHADOW_RANGE_Z        400.0f // along-light-axis half-extent
+```
+
+`SHADOW_RANGE` controls how wide an area the shadow map covers. Increasing it makes shadows blockier (more world per texel). The shadow ortho is **centered on the active camera** each frame — it drags along with the player.
+
+<Warning>
+  Shadow rendering is Vulkan-only. The `Cast Shadows` flag is silently ignored on GameCube, Wii, and 3DS. Use baked lighting for those platforms.
+</Warning>
+
+---
+
+## Skybox
+
+A skybox is a large inverted sphere (`SM_Sphere`) with a scale of 500 and front-face culling, rendered unlit so scene lighting doesn't affect it.
+
+### Creating a Skybox
+
+Right-click in the scene hierarchy → **Add Basic 3D → Skybox → Skybox Textured** (or Skybox Vertex Color). This creates a `StaticMesh3D` named "Skybox" with collision, overlaps, physics, and shadow casting all disabled.
+
+### Setting Up a Textured Skybox
+
+<Steps>
+  <Step title="Import a sky texture">
+    Import an equirectangular panorama image (power-of-2 dimensions). Recommended sizes: 2048×1024 (balanced), 4096×2048 (high quality), 1024×512 (for 3DS/GCN).
+  </Step>
+  <Step title="Create a MaterialLite">
+    | Property | Value | Reason |
+    |---|---|---|
+    | Shading Model | **Unlit** | Not affected by scene lighting |
+    | Cull Mode | **Front** | Camera is inside the sphere |
+    | Depth Test | **Disabled** | Sky renders behind everything |
+    | Apply Fog | **Disabled** | Not affected by scene fog |
+    | Texture 0 | Your sky texture | The panorama |
+  </Step>
+  <Step title="Assign and adjust">
+    Set the skybox node's **Material Override** to the new material. Default scale 500 works for most scenes — ensure `skybox scale < camera far plane distance`.
+  </Step>
+</Steps>
+
+Skyboxes work on all platforms that support `StaticMesh3D` — Vulkan, GX, and C3D.
+
+---
+
+## Mesh Instancing — InstancedMesh3D
+
+`InstancedMesh3D` renders many copies of the same mesh efficiently. On Vulkan it uses true GPU hardware instancing (one draw call for N instances). On GameCube/Wii/3DS it automatically **unrolls** instances into spatially bucketed static meshes at load time.
+
+### Usage
+
+```lua
+-- In C++ or editor: add instances to an InstancedMesh3D node
+local data = MeshInstanceData.New()
+data.mPosition = Vec(10, 0, 5)
+data.mRotation = Vec(0, 45, 0)
+data.mScale    = Vec(1, 1, 1)
+instancedMesh:AddInstanceData(data)
+```
+
+### Platform Behavior
+
+| Feature | Vulkan (Win/Linux/Android) | GX (GameCube/Wii) | C3D (3DS) |
+|---|---|---|---|
+| Hardware instanced draw calls | ✅ (1 draw for N instances) | ❌ | ❌ |
+| Unrolled fallback | N/A | ✅ spatial grid merge | ✅ spatial grid merge |
+| Per-instance vertex colors | ✅ | ❌ | ❌ |
+| Draw calls for 100 instances | 1 | ~N spatial cells | ~N spatial cells |
+
+**Unrolling:** the engine buckets instances into a spatial grid (default cell size 25 units), merges vertex data per cell into a batched `StaticMesh`, and spawns one `StaticMesh3D` child per cell. Set **Unrolled Cull Distance** for distance-based culling of unrolled cells.
+
+### When to Use Instancing
+
+| Use Case | Recommendation |
+|---|---|
+| Many copies of the same mesh (trees, rocks, buildings) | **Always use `InstancedMesh3D`** |
+| Unique objects needing independent behavior | Individual `StaticMesh3D` nodes |
+| Meshes with vertex colors on GCN/Wii/3DS | Merged geometry from DCC tool (unrolling doesn't support per-instance vertex colors) |
+
+---
+
+## Occlusion Culling
+
+Polyphase uses a **baked potentially-visible-set (PVS)** — the editor precomputes visibility once; the runtime does a single cell lookup plus one bit test per draw. The feature works identically on every platform.
+
+### Quick Setup
+
+<Steps>
+  <Step title="Flag occluders">
+    Select walls, floors, and large props. Tick **Primitive → Occlusion → Occluder Static** (or use **World → Mark Selected Occluder + Occludee**).
+  </Step>
+  <Step title="Flag occludees">
+    Select meshes that should be hidden when behind an occluder. Tick **Occludee Static**.
+  </Step>
+  <Step title="Place OcclusionArea3D nodes">
+    Add **OcclusionArea3D** nodes (Spawn Node → 3D → Environment) covering the volume the camera can reach. Without them, the bake volume is the union of all occludee bounds, which is often far larger than needed.
+  </Step>
+  <Step title="Configure bake settings">
+    In the scene asset's properties: enable **Occlusion Culling**, set **Occlusion Cell Size**, **Bake Quality**, and optionally **Occlusion Console Budget KB** (default 512 KB; 0 = unlimited).
+  </Step>
+  <Step title="Bake">
+    **World → Bake Occlusion Culling**. A cancellable progress modal shows cell count and progress. Re-bakes after moving props are incremental — only new or moved occludees are re-cast.
+  </Step>
+</Steps>
+
+### What to Flag
+
+| Object | Occluder | Occludee |
+|---|---|---|
+| Floor / terrain | ✅ | ❌ |
+| Perimeter walls, mountains | ✅ | ❌ (unless split into segments) |
+| Interior walls, buildings, big props | ✅ | ✅ |
+| Small props, crates, pillars | optional | ✅ |
+| Foliage, glass, particles | ❌ | ✅ if opaque |
+| Moving objects / doors | ❌ | ✅ (dynamic table) |
+| Skybox | ❌ | ❌ |
+
+### Bake Quality Levels
+
+| Quality | Samples per cell | Targets per occludee |
+|---|---|---|
+| Low | 4 | 9 + face grid (up to 6×6) |
+| Medium | 9 | 15 + 8 mesh vertices + face grid |
+| High | 17 | 15 + 24 mesh vertices + face grid (up to 8×8) |
+
+### Gameplay Queries
+
+```lua
+-- Enemy AI: only react when the player camera can see us
+if world:IsSeenByCamera(self) then self:Alert() end
+
+-- Get all visible enemies and pickups
+local threats = world:GetSeenByCamera({ "Enemy", "Turret" })
+local pickups = world:GetSeenByCamera("Pickup")
+for _, node in ipairs(threats) do
+    -- react
+end
+```
+
+### Lua API
+
+```lua
+Renderer.EnableOcclusionCulling(false)
+local n = Renderer.GetNumOcclusionCulled()
+mesh:EnableOccludee(true)
+if mesh:IsOccluder() then ... end
+world:IsSeenByCamera(node)           -- bool
+world:GetSeenByCamera()              -- { Node3D, ... }
+world:GetSeenByCamera("Enemy")       -- filtered by one tag
+world:GetSeenByCamera({ "A", "B" })  -- any of several tags
+```
+
+### Memory
+
+| Table | Size |
+|---|---|
+| Occludee/occluder entries | 24 bytes each |
+| Static cell table | cells × 2 bytes (× 4 if ≥ 65,535 unique sets) |
+| Static set pool | unique sets × ⌈occludees/32⌉ × 4 bytes |
+
+**Console Budget KB** controls the maximum size shipped to console targets. If a scene's baked data exceeds the budget when cooking for GameCube, Wii, 3DS, or other console addon targets, an empty table is written and a warning is logged. Desktop builds always keep the full data.
+
+<Accordion title="Limitations">
+- Moving an **occluder** invalidates the bake and disables culling until you re-bake. **Occludees** may move freely (they switch to the dynamic coarse table).
+- Translucent, additive, and masked materials never occlude.
+- Dynamic occludees use a coarser visibility table and are culled less aggressively than static ones.
+- Shadow casters are never occlusion-culled.
+- Cell size is a direct trade-off: smaller cells give tighter culling but more cells to bake and store. The bake refuses more than 262,144 cells and warns above 65,536.
+</Accordion>

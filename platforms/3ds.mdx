@@ -1,0 +1,244 @@
+---
+title: "Building for Nintendo 3DS with Polyphase Engine"
+sidebarTitle: "Nintendo 3DS"
+description: "Build and deploy Polyphase Engine games on the Nintendo 3DS using devkitARM, Citro3D, PICA200 shaders, CIA packaging, and the dual-screen layout system."
+---
+
+Polyphase Engine supports the Nintendo 3DS family through the **devkitARM** toolchain and the **Citro3D** (C3D) graphics backend, which wraps the PICA200 GPU. Games are deployed as `.3dsx` homebrew executables, runnable from the Homebrew Launcher, or optionally packaged as installable `.cia` titles for the HOME Menu. The engine also detects the New Nintendo 3DS at startup and automatically enables CPU speedup for better performance on that model.
+
+## Hardware Summary
+
+| Spec | Original 3DS | New 3DS |
+|------|-------------|---------|
+| **CPU** | ARM11 MPCore (dual-core, 268 MHz) | ARM11 MPCore (quad-core, 804 MHz) |
+| **GPU** | PICA200 | PICA200 |
+| **Top Screen** | 400 × 240 (stereoscopic 3D) | 400 × 240 (super-stable 3D) |
+| **Bottom Screen** | 320 × 240 (resistive touch) | 320 × 240 (resistive touch) |
+| **Right Stick** | Circle Pad Pro (accessory) | C-Stick (built-in) |
+
+The engine calls `APT_CheckNew3DS()` at startup. If a New 3DS is detected, `osSetSpeedupEnable(true)` is called automatically. `SYS_GetPlatformTier()` returns **1** on New 3DS and **0** on the original model.
+
+## Toolchain Setup
+
+3DS builds use the **devkitARM** toolchain from devkitPro. The `DEVKITARM` environment variable must be set.
+
+<Steps>
+  <Step title="Install devkitPro">
+    Download and install devkitPro from [devkitpro.org](https://devkitpro.org/wiki/Getting_Started).
+  </Step>
+  <Step title="Install 3DS libraries">
+    ```bash
+    dkp-pacman -S 3ds-dev
+    ```
+    This installs devkitARM, libctru, Citro3D, and the `picasso` PICA200 assembler.
+  </Step>
+  <Step title="Set environment variables">
+    ```bash
+    export DEVKITPRO=/opt/devkitpro
+    export DEVKITARM=/opt/devkitpro/devkitARM
+    ```
+  </Step>
+</Steps>
+
+## Building
+
+```bash
+make -f Makefile_3DS -j12
+```
+
+**Key build flags:**
+
+| Flag | Value |
+|------|-------|
+| Architecture | `-march=armv6k -mtune=mpcore -mfloat-abi=hard` |
+| Platform define | `PLATFORM_3DS=1` |
+| Graphics API define | `API_C3D=1` |
+| C++ standard | `gnu++11` |
+| RTTI / Exceptions | Disabled (`-fno-rtti -fno-exceptions`) |
+
+**Linked libraries:** `-lcitro3d -lctru -lm`
+
+**Output:** Static library at `Build/3DS/lib<target>.a`, linked into the final `.3dsx` homebrew executable.
+
+3DS builds are also available through Docker:
+
+```bash
+docker run --rm -v ./dist/3DS:/game -v .:/project polyphase-engine build-3ds
+```
+
+## Graphics (Citro3D / PICA200)
+
+The graphics backend uses **Citro3D** (C3D), a high-level wrapper around the PICA200 GPU. This backend is selected when `API_C3D=1`.
+
+### Graphics Constants
+
+| Constant | Value |
+|----------|-------|
+| `MAX_FRAMES` | 2 |
+| `MAX_MESH_VERTEX_COUNT` | 65,535 |
+| `MAX_GPU_BONES` | 16 |
+| `SUPPORTS_SECOND_SCREEN` | 1 |
+
+### PICA200 Shaders
+
+Shaders are written for the PICA200 vertex processor in a custom assembly language and compiled with the `picasso` assembler. Source files use the `.v.pica` extension and live in `Engine/Shaders/PICA200/`. The build system compiles them into header files in `Engine/Intermediate/3DS/`.
+
+| Shader | Description |
+|--------|-------------|
+| `StaticMesh` | Static mesh rendering |
+| `SkeletalMesh` | Skeletal mesh with bone transforms |
+| `Particle` | Particle systems |
+| `Quad` | 2D quads / widgets |
+| `Text` | Text rendering |
+
+## Dual-Screen Layout
+
+The 3DS has two physical screens, and Polyphase creates one **World** per screen at startup.
+
+| Screen | Resolution | World Index (Lua) |
+|--------|-----------|-------------------|
+| Top | 400 × 240 (stereoscopic 3D) | `Engine.GetWorld(1)` |
+| Bottom | 320 × 240 (touch input) | `Engine.GetWorld(2)` |
+
+### Loading Scenes to Each Screen
+
+```lua
+-- Load a gameplay scene on the top screen
+Engine.GetWorld(1):LoadScene("Gameplay")
+
+-- Load a HUD or map scene on the bottom screen
+Engine.GetWorld(2):LoadScene("BottomHUD")
+```
+
+### Screen Resolutions from Lua
+
+```lua
+local topRes = Renderer.GetScreenResolution(1)    -- Vector(400, 240)
+local botRes = Renderer.GetScreenResolution(2)    -- Vector(320, 240)
+```
+
+Because the two screens have different widths, use `GetScreenResolution()` to adapt widget layouts:
+
+```lua
+function StatusBar:Start()
+    local res = self:GetScreenResolution()
+    local widget = self:FindChild("StatusBar")
+    widget:SetPosition(res.x / 2, widget:GetPosition().y)
+end
+```
+
+### Stereoscopic 3D
+
+The 3DS hardware 3D slider controls stereoscopic depth. Each frame, `SYS_Update()` reads `osGet3DSliderState()` (0.0–1.0) and stores it in `SystemState::mSlider`. The **interocular distance (IOD)** is computed as `slider / 3`, with the left eye at `-IOD` and the right eye at `+IOD`. When the slider is at 0, only a single mono view is rendered for the top screen.
+
+<Note>
+  The bottom screen always renders a single view — stereoscopic 3D is only available on the top screen.
+</Note>
+
+## Input
+
+| Input Type | Supported | Notes |
+|------------|-----------|-------|
+| Gamepad buttons | ✓ | A, B, X, Y, L, R, ZL, ZR, D-pad, Start, Select |
+| Circle Pad (left stick) | ✓ | Normalized to −1.0 to 1.0 |
+| C-Stick (right stick) | ✓ | New 3DS only, via `irrstCstickRead()` |
+| Triggers | ✓ | L/R as digital (0.0 or 1.0) |
+| Touch | ✓ | Bottom screen, via `hidTouchRead()` |
+| Accelerometer | ✓ | 3-axis, normalized (scale 1/512) |
+| Gyroscope | ✓ | 3-axis, normalized (scale 1/1024) |
+| Soft keyboard | ✓ | System keyboard via `swkbdInputText()` |
+| Keyboard / Mouse | ✗ | Not available on 3DS |
+
+## Audio (NDSP / CSND)
+
+Audio uses the **DSP service** via `ndspInit()`. If that fails (no `dspfirm.cdc`), the engine falls back to the older **CSND** service.
+
+| | NDSP | CSND |
+|---|---|---|
+| Needs `dspfirm.cdc` | Yes | No |
+| Short clips (resident in RAM) | Yes | Yes |
+| **Streaming** SoundWaves | Yes | **No — silent** |
+| `AUDIO_MAX_VOICES` | 8 | 8 |
+
+<Warning>
+  Streaming SoundWaves require the 3DS DSP firmware (`sdmc:/3ds/dspfirm.cdc`). This file is Nintendo's copyrighted software and is not included with Polyphase. Export it from your own 3DS using the open-source [DSP1](https://github.com/zoogie/DSP1) homebrew app. For Azahar (emulator), place the same file at `<Azahar user folder>/sdmc/3ds/dspfirm.cdc`.
+</Warning>
+
+Non-streaming audio loaded into linear memory costs roughly 10 MB per minute at 44.1 kHz 16-bit stereo. For clips longer than a few minutes, enable **Streaming** on the SoundWave asset, or downsample to 22 kHz mono.
+
+## Output Format and Packaging
+
+The standard build target produces a `.3dsx` homebrew executable runnable from the Homebrew Launcher. An optional **CIA** target wraps the same build into an installable HOME Menu title.
+
+### .3dsx (Homebrew Launcher)
+
+Assets are embedded in the executable or placed in RomFS. The packaging flow:
+
+1. Assets are cooked to `.oct` format
+2. `AssetRegistry.txt` is generated
+3. Embedded asset headers are generated
+4. Assets are copied to `{IntermediateDir}/Romfs/`
+5. The final `.3dsx` + `.smdh` are produced via `make`
+
+Every build profile has a **3DS Target Options** block for the SMDH metadata: **Title**, **Description**, **Author**, and an **Icon** (PNG/JPG/BMP/TGA, resized to 48×48).
+
+### Installable CIA
+
+The **Nintendo 3DS (CIA)** target packages the game as a full HOME Menu title, giving it the full application memory region (64 MB on Original 3DS, 124 MB on New 3DS) instead of the smaller Homebrew Launcher allocation.
+
+<Steps>
+  <Step title="Install required tools">
+    Open **Preferences → External → Launchers → 3DS CIA Tools** and click **Download makerom + bannertool + cwavtool**, or install manually:
+
+    | Tool | Version | Purpose |
+    |------|---------|---------|
+    | `makerom` | 0.19.0 | Builds the `.cia` container (required) |
+    | `bannertool` | 1.2.3 | HOME Menu banner + tune (optional) |
+    | `cwavtool` | 1.0.0 | DSP-ADPCM banner tune encoding (optional, experimental) |
+  </Step>
+  <Step title="Configure CIA target options">
+    | Option | Default |
+    |--------|---------|
+    | Product Code | `CTR-P-` + 4 letters of the project name |
+    | Unique ID | Hash of the project name in `0xFF000`–`0xFFFFF` |
+    | Version | `1.0.0` |
+    | Banner Mode | Image (256×128) |
+    | Banner Audio | silence |
+  </Step>
+  <Step title="Build from the editor or headless">
+    ```bash
+    PolyphaseEditor -headless -project MyGame/MyGame.octp -build polyphase.n3ds.cia embedded
+    ```
+  </Step>
+  <Step title="Install on hardware or emulator">
+    - **Hardware:** Copy `.cia` to SD card, install with FBI. Launch from HOME Menu.
+    - **Azahar:** File → Install CIA, then launch from the game list.
+  </Step>
+</Steps>
+
+<Note>
+  The HOME Menu caches each title's banner by Title ID. If you update the icon or banner, delete the title first before reinstalling to force a cache refresh.
+</Note>
+
+## Networking (SOC)
+
+Networking uses the **SOC service** (`socInit()` / `socExit()`), which provides a BSD-style socket API.
+
+- UDP sockets (`SOCK_DGRAM`) and broadcast support
+- Non-blocking mode via `ioctl(FIONBIO)`
+- IP address queries via `SOCU_GetIPInfo()`
+- Buffer size: 1 MB (`SOC_BUFFERSIZE = 0x100000`)
+
+## Key Source Files
+
+| File | Description |
+|------|-------------|
+| `Engine/Source/System/3DS/System_3DS.cpp` | Platform init/shutdown, file I/O, threading, time |
+| `Engine/Source/Graphics/C3D/Graphics_C3D.cpp` | Citro3D rendering backend |
+| `Engine/Source/Graphics/C3D/C3dTypes.h` | Graphics context struct |
+| `Engine/Source/Input/3DS/Input_3DS.cpp` | Gamepad, touch, motion input |
+| `Engine/Source/Audio/3DS/Audio_3DS.cpp` | NDSP audio backend |
+| `Engine/Source/Network/3DS/Network_3DS.cpp` | SOC networking backend |
+| `Engine/Source/Graphics/GraphicsConstants.h` | GPU limits, `SUPPORTS_SECOND_SCREEN` |
+| `Engine/Makefile_3DS` | Build configuration |
+| `Engine/Shaders/PICA200/` | PICA200 vertex shader sources |

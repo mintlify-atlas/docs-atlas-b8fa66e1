@@ -1,0 +1,314 @@
+---
+title: "Audio System: Sounds, 3D Audio, and Playback"
+sidebarTitle: "Audio"
+description: "Play 2D and spatial 3D audio using SoundWave assets and Audio3D nodes, control volume and pitch, and query real-time analysis data across all platforms."
+---
+
+Polyphase's audio system is built around two concepts: the global `Audio` namespace for fire-and-forget playback, and the `Audio3D` scene node for positional sounds that attenuate with distance. Both work with `SoundWave` assets and are available from Lua. The system runs on every supported platform — Windows, Linux, macOS, Android, 3DS, GameCube, and Wii — with the platform-specific audio backend hidden behind a common API.
+
+## SoundWave Assets
+
+A `SoundWave` is an audio asset that holds PCM audio data. Import `.wav` files through the editor's asset importer. You reference a SoundWave asset in scripts using `LoadAsset`:
+
+```lua
+local explosion = LoadAsset("Sounds/SW_Explosion")
+```
+
+SoundWave assets are used by both the global `Audio` functions and `Audio3D` nodes.
+
+---
+
+## Global Audio Playback
+
+The `Audio` global provides stateless, node-free sound playback. Use it for UI sounds, music, and one-shot effects that don't need a world position.
+
+### 2D (Non-Positional) Playback
+
+```lua
+-- Simple one-liner
+Audio.Play(explosion)
+
+-- Full control
+Audio.PlaySound2D(sound,
+    volume,      -- multiplier, default 1.0
+    pitch,       -- multiplier, default 1.0
+    startTime,   -- start offset in seconds, default 0
+    loop,        -- boolean, default false
+    priority     -- integer, default 0
+)
+
+-- Examples
+Audio.PlaySound2D(clickSfx)
+Audio.PlaySound2D(musicTrack, 0.8, 1.0, 0, true)   -- looping music at 80% volume
+```
+
+### 3D (Positional) Playback
+
+```lua
+-- Play a sound at a world position with inner/outer radius falloff
+Audio.PlaySound3D(sound, position, innerRadius, outerRadius,
+    AttenuationFunc.Linear,   -- attenuation curve
+    volume, pitch, startTime, loop, priority
+)
+
+-- Alias (preferred name going forward)
+Audio.PlaySoundAtPosition(explosionSfx, impactPos, 5.0, 30.0)
+```
+
+The `innerRadius` is the distance at which the sound is loudest — moving closer doesn't increase volume further. The `outerRadius` is the distance at which the sound becomes inaudible.
+
+### Stopping and Updating Sounds
+
+```lua
+Audio.Stop(soundWave)       -- stop all voices of this SoundWave
+Audio.StopSounds(soundWave) -- alias for Stop
+Audio.StopAllSounds()       -- stop everything
+
+-- Update volume/pitch on all currently-playing voices of a wave
+Audio.UpdateSound(sound, volume, pitch, priority)
+
+Audio.IsSoundPlaying(sound)  -- returns boolean
+```
+
+### Master Volume and Pitch
+
+```lua
+Audio.SetMasterVolume(0.75)
+local vol = Audio.GetMasterVolume()
+
+Audio.SetMasterPitch(1.0)
+local pitch = Audio.GetMasterPitch()
+```
+
+### Audio Classes
+
+Audio classes let you control the volume and pitch of a group of sounds together:
+
+```lua
+Audio.SetAudioClassVolume(0.5)   -- halve the volume of the class
+Audio.SetAudioClassPitch(1.0)
+local vol   = Audio.GetAudioClassVolume()
+local pitch = Audio.GetAudioClassPitch()
+```
+
+---
+
+## Audio3D Node
+
+`Audio3D` is a scene node for sounds that live at a position in the world. Add one to your scene in the editor, assign a `SoundWave`, set the attenuation radii, and control it from script. `Audio3D` inherits from `Node3D`, so it moves with its parent node automatically.
+
+### Setup in Script
+
+```lua
+-- Assign a SoundWave and start playing
+self.audioNode:SetSoundWave(LoadAsset("Sounds/SW_AmbientLoop"))
+self.audioNode:SetLoop(true)
+self.audioNode:SetVolume(0.8)
+self.audioNode:SetInnerRadius(3.0)
+self.audioNode:SetOuterRadius(20.0)
+self.audioNode:PlayAudio()
+```
+
+### Playback Control
+
+| Method | Description |
+|---|---|
+| `PlayAudio()` | Start or resume playback. If the cursor is past the end, rewinds automatically |
+| `PlayAudio(wave, loop)` | Assign `wave`, set `loop`, then play — all in one call |
+| `PauseAudio()` / `Pause()` | Pause playback; cursor position is preserved |
+| `StopAudio()` / `Stop()` | Stop and rewind to the beginning |
+| `ResetAudio()` | Hard-kill the voice and reset cursor without changing wave |
+| `Play()` | Alias for `PlayAudio()` (no-arg form) |
+
+```lua
+-- Switch to a new track without stopping
+self.audioNode:SetSoundWave(LoadAsset("Sounds/SW_NewTrack"))
+self.audioNode:PlayAudio()   -- voice swap is automatic
+
+-- Toggle pause
+if self.audioNode:IsPlaying() then
+    self.audioNode:Pause()
+else
+    self.audioNode:Play()
+end
+```
+
+### Spatial Properties
+
+```lua
+node:SetInnerRadius(radius)   -- distance at which sound is at full volume
+node:GetInnerRadius()
+node:SetOuterRadius(radius)   -- distance at which sound is inaudible
+node:GetOuterRadius()
+node:SetAttenuationFunc(AttenuationFunc.Linear)  -- falloff curve
+node:GetAttenuationFunc()
+```
+
+### Volume, Pitch, and Priority
+
+```lua
+node:SetVolume(1.0)     -- volume multiplier
+node:GetVolume()
+node:SetPitch(1.0)      -- pitch multiplier
+node:GetPitch()
+node:SetPriority(0)     -- higher priority survives voice-limit culling
+node:GetPriority()
+```
+
+### Playback State
+
+```lua
+node:IsPlaying()              -- true if playing and not paused
+node:IsAudible()              -- true if the audio receiver is within outer radius
+node:GetPlayTime()            -- seconds elapsed since playback started
+node:GetDuration()            -- total duration of the assigned SoundWave in seconds
+node:GetPlayTimeNormalized()  -- current position as [0, 1] of duration
+```
+
+### One-Shot Voices
+
+Fire a transient positional voice at the node's world position without disturbing its main loop. Useful for footstep and impact sounds:
+
+```lua
+node:PlayOneShot(footstepSfx)                       -- use node's current volume/pitch
+node:PlayOneShot(impactSfx, 1.2, 1.0, 1)            -- override volume, pitch, priority
+```
+
+### Seeking
+
+```lua
+node:Seek(3.5)              -- seek to 3.5 seconds
+node:SeekNormalized(0.5)    -- seek to 50% of the wave's duration
+```
+
+### Auto-Play and Looping
+
+```lua
+node:SetAutoPlay(true)   -- play automatically when the node starts
+node:SetLoop(true)       -- loop indefinitely
+```
+
+### The `OnFinished` Signal
+
+`Audio3D` emits `OnFinished` each time a wave reaches the end of one play. Non-looping voices fire it once; looping voices fire it on every wrap, which lets playlist scripts auto-advance.
+
+```lua
+-- Using a signal connection
+self.player:ConnectSignal("OnFinished", self, self.OnTrackFinished)
+
+-- Or define the callback on the Audio3D's script component
+function MyAudio:OnFinished()
+    self:PlayNextTrack()
+end
+```
+
+For global "any sound finished" notifications, use the `SignalBus`:
+
+```lua
+function MyMusicController:Start()
+    SignalBus.Subscribe("SoundFinished", self, function(self, soundWave)
+        if soundWave == self.musicTrack then
+            self:PlayNextTrack()
+        end
+    end)
+end
+```
+
+---
+
+## Worked Examples
+
+<Accordion title="Looping ambient sound on a world object">
+  ```lua
+  function AmbientEmitter:Start()
+      self.audioNode = self:FindChild("Audio3D")
+      self.audioNode:SetSoundWave(LoadAsset("Sounds/SW_WaterStream"))
+      self.audioNode:SetLoop(true)
+      self.audioNode:SetInnerRadius(2.0)
+      self.audioNode:SetOuterRadius(15.0)
+      self.audioNode:SetVolume(0.7)
+      self.audioNode:Play()
+  end
+  ```
+</Accordion>
+
+<Accordion title="Music player with track switching">
+  ```lua
+  function MusicPlayer:Start()
+      self.tracks = {
+          LoadAsset("Music/SW_Track1"),
+          LoadAsset("Music/SW_Track2"),
+          LoadAsset("Music/SW_Track3"),
+      }
+      self.current = 1
+      self.audio = self:FindChild("Audio3D")
+      self.audio:ConnectSignal("OnFinished", self, self.OnTrackFinished)
+      self:PlayCurrent()
+  end
+
+  function MusicPlayer:PlayCurrent()
+      self.audio:SetSoundWave(self.tracks[self.current])
+      self.audio:Play()
+  end
+
+  function MusicPlayer:OnTrackFinished()
+      self.current = (self.current % #self.tracks) + 1
+      self:PlayCurrent()
+  end
+  ```
+</Accordion>
+
+<Accordion title="Impact sound with volume-based priority">
+  ```lua
+  function Projectile:OnCollision(other, hitNormal, hitPos)
+      local speed    = self:GetLinearVelocity():Length()
+      local volume   = math.min(speed / 20.0, 1.0)
+      local priority = math.floor(volume * 10)
+
+      Audio.PlaySoundAtPosition(
+          LoadAsset("Sounds/SW_Impact"),
+          hitPos,
+          2.0, 15.0,               -- inner/outer radius
+          AttenuationFunc.Linear,
+          volume, 1.0, 0, false, priority
+      )
+  end
+  ```
+</Accordion>
+
+<Accordion title="Real-time audio analysis for a visualizer">
+  ```lua
+  function Visualizer:Tick(dt)
+      -- Using Audio3D analysis methods
+      local bassAmp = self.audioNode:GetFrequencies(20, 250)
+      local midAmp  = self.audioNode:GetFrequencies(250, 4000)
+      local highAmp = self.audioNode:GetFrequencies(4000, 20000)
+
+      self.bassBar:SetScale(Vec3.New(1, bassAmp * 5, 1))
+      self.midBar:SetScale(Vec3.New(1, midAmp * 5, 1))
+      self.highBar:SetScale(Vec3.New(1, highAmp * 5, 1))
+
+      -- Full spectrum (32 bins)
+      local spectrum = self.audioNode:GetSpectrum(20, 20000, 32)
+      for i, mag in ipairs(spectrum) do
+          self.spectrumBars[i]:SetScale(Vec3.New(1, mag * 4, 1))
+      end
+  end
+  ```
+</Accordion>
+
+---
+
+## Audio3D vs. Audio Global — When to Use Which
+
+| Scenario | Recommended Approach |
+|---|---|
+| Music / ambient tracks that follow a node | `Audio3D` with `SetLoop(true)` |
+| One-shot sound effects at a world position | `Audio.PlaySoundAtPosition()` or `Audio3D:PlayOneShot()` |
+| UI sounds, menu clicks, notifications | `Audio.PlaySound2D()` |
+| Positional sound with complex lifecycle (pause/seek) | `Audio3D` node |
+| Fire-and-forget from gameplay code | `Audio.Play()` |
+
+<Note>
+`Audio.Pause(sound)` is a volume duck, not a transport pause — voices keep ticking with volume set to 0. For a true pause that preserves cursor position, use an `Audio3D` node and call `Audio3D:PauseAudio()`.
+</Note>

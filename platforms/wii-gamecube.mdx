@@ -1,0 +1,271 @@
+---
+title: "Building for Wii and GameCube with Polyphase Engine"
+sidebarTitle: "Wii / GameCube"
+description: "Build, deploy, and test Polyphase Engine games on the Nintendo Wii and GameCube using devkitPPC, the GX graphics API, and Wiiload for network deployment."
+---
+
+Polyphase Engine targets both the Nintendo Wii and GameCube through a shared **devkitPPC** toolchain and a unified **GX** graphics backend. Each platform has its own Makefile and output path, but the same source tree compiles for both. Games are deployed as `.dol` (Dolphin Object Library) executables and can be sent directly to a Wii over the network using Wiiload, eliminating the need to reflash SD cards during iteration.
+
+## Hardware Specs
+
+<Tabs>
+  <Tab title="Wii">
+    | Spec | Value |
+    |------|-------|
+    | **CPU** | IBM Broadway (PowerPC 750CL, 729 MHz) |
+    | **RAM** | 88 MB total (24 MB "MEM1" + 64 MB "MEM2") |
+    | **GPU** | ATI Hollywood (GX API) |
+    | **Storage** | SD card, USB via IOS |
+    | **Network** | Built-in Wi-Fi (802.11 b/g) |
+    | **Output format** | `.dol` executable |
+  </Tab>
+  <Tab title="GameCube">
+    | Spec | Value |
+    |------|-------|
+    | **CPU** | IBM Gekko (PowerPC 750CXe, 485 MHz) |
+    | **RAM** | 24 MB main RAM + 16 MB ARAM (audio) |
+    | **GPU** | ATI Flipper (GX API) |
+    | **Storage** | SD via SD Gecko adapter |
+    | **Network** | Broadband Adapter (optional accessory) |
+    | **Output format** | `.dol` executable |
+  </Tab>
+</Tabs>
+
+## Graphics Constants (GX Backend)
+
+Both platforms share the `API_GX` backend. The following constants apply to all GX builds:
+
+| Constant | Value |
+|----------|-------|
+| `MAX_FRAMES` | 1 |
+| `MAX_MESH_VERTEX_COUNT` | 65,535 |
+| `MAX_GPU_BONES` | 10 |
+| `SUPPORTS_SECOND_SCREEN` | 0 |
+
+## Toolchain Setup
+
+Both Wii and GameCube builds require the **devkitPPC** toolchain from devkitPro. The `DEVKITPPC` and `DEVKITPRO` environment variables must be set before building.
+
+<Steps>
+  <Step title="Install devkitPro">
+    Download and install devkitPro from [devkitpro.org](https://devkitpro.org/wiki/Getting_Started). On Windows it ships alongside an MSYS2 environment; on Linux and macOS use the `dkp-pacman` package manager.
+  </Step>
+  <Step title="Install Wii / GameCube libraries">
+    Use the devkitPro package manager to install the required console libraries:
+
+    ```bash
+    # Install Wii support (includes libogc, wiiuse, bte)
+    dkp-pacman -S wii-dev
+
+    # Install GameCube support (includes libogc2)
+    dkp-pacman -S gamecube-dev
+    ```
+  </Step>
+  <Step title="Set environment variables">
+    Ensure the required variables point to your devkitPro installation:
+
+    ```bash
+    export DEVKITPRO=/opt/devkitpro
+    export DEVKITPPC=/opt/devkitpro/devkitPPC
+    ```
+  </Step>
+</Steps>
+
+## Building
+
+<Tabs>
+  <Tab title="Wii">
+    ```bash
+    make -f Makefile_Wii -j12
+    ```
+
+    **Key build flags:**
+
+    | Flag | Value |
+    |------|-------|
+    | Platform define | `PLATFORM_WII=1` |
+    | Shared platform define | `PLATFORM_DOLPHIN=1` |
+    | Graphics API define | `API_GX=1` |
+    | Intermediate directory | `Intermediate/Wii` |
+    | Output directory | `Build/Wii` |
+
+    **Linked libraries:** `-lwiiuse -lbte -lasnd -lfat -logc -lm`
+  </Tab>
+  <Tab title="GameCube">
+    ```bash
+    make -f Makefile_GCN -j12
+    ```
+
+    **Key build flags:**
+
+    | Flag | Value |
+    |------|-------|
+    | Platform define | `PLATFORM_GAMECUBE=1` |
+    | Shared platform define | `PLATFORM_DOLPHIN=1` |
+    | Graphics API define | `API_GX=1` |
+    | Intermediate directory | `Intermediate/GCN` |
+    | Output directory | `Build/GCN` |
+
+    **Linked libraries:** `-lasnd -lbba -lfat -logc -lm`
+
+    <Note>
+      The GameCube Makefile includes `$(DEVKITPRO)/libogc2/gamecube_rules` rather than the standard `wii_rules`, which sets the correct linker script and hardware memory map for the GCN.
+    </Note>
+  </Tab>
+</Tabs>
+
+Both Makefiles also support a GDB-over-USB-Gecko debug build. Pass `POLYPHASE_GDB=1` to switch from `-O2` to `-Og -gdwarf-4 -gstrict-dwarf`:
+
+```bash
+make -f Makefile_Wii -j12 POLYPHASE_GDB=1
+```
+
+## Docker Builds
+
+Wii and GameCube builds are also available through Docker without requiring a local devkitPro installation:
+
+```bash
+# Build a Wii .dol
+docker run --rm -v ./dist/Wii:/game -v .:/project polyphase-engine build-wii
+
+# Build a GameCube .dol
+docker run --rm -v ./dist/GCN:/game -v .:/project polyphase-engine build-gamecube
+```
+
+## DOL Output Format
+
+The final executable is a `.dol` (Dolphin Object Library) file — the native executable format for both Wii and GameCube. The Homebrew Channel (Wii) and SD loaders (GameCube) boot `.dol` files directly.
+
+<Note>
+  If your project path contains a space, texture converters (`gxtexconv`) cannot handle it on engine versions `v6.2.0-beta.18.4` and earlier. Every cooked texture ships empty, resulting in a black screen with no error. Move the project to a path without spaces, or use a newer release. Docker builds were never affected because the project is mounted at a fixed path inside the container.
+</Note>
+
+## Wiiload — Network Deployment
+
+Wiiload sends a compiled `.dol` directly to a Wii running the Homebrew Channel over TCP, so you can iterate without swapping SD cards.
+
+### Prerequisites
+
+- **devkitPro** installed with `wiiload`:
+  - Windows: `C:\devkitPro\tools\bin\wiiload.exe`
+  - Linux: `wiiload` on `PATH` after devkitPro installation
+- **Homebrew Channel** installed on the target Wii
+- Both your development machine and the Wii on the same local network
+
+### Finding the Wii's IP Address
+
+1. Launch the **Homebrew Channel** on the Wii
+2. Press the **Home** button on the Wii Remote
+3. The IP address is displayed at the top-left of the screen (e.g., `192.168.1.42`)
+
+### Editor Configuration
+
+1. Open **Preferences → External → Launchers**
+2. In the **Wiiload (Wii Hardware)** section, enter your Wii's IP address
+3. The setting is saved automatically
+
+### Build & Run On Device
+
+1. Open **File → Package Project**
+2. Select or create a build profile with **Platform** set to **Wii**
+3. Click **Build & Run On Device**
+4. Ensure the Homebrew Channel is open on the Wii
+5. Click **Send**
+
+The editor constructs and runs the following command automatically:
+
+```bash
+# Linux / macOS
+WIILOAD=tcp:192.168.1.42 wiiload MyGame.dol
+
+# Windows (cmd)
+set WIILOAD=tcp:192.168.1.42
+wiiload MyGame.dol
+```
+
+### Wiiload Technical Reference
+
+| Item | Value |
+|------|-------|
+| Protocol | TCP |
+| Default port | 4299 |
+| Supported formats | `.dol`, `.elf` |
+| Environment variable | `WIILOAD=tcp:<IP>` |
+
+<Accordion title="Troubleshooting Wiiload">
+  **"wiiload not available"**
+  - Verify devkitPro is installed
+  - Windows: Check `C:\devkitPro\tools\bin\wiiload.exe` exists
+  - Linux: Run `which wiiload`
+
+  **Connection failed**
+  1. Verify the Wii is powered on with the Homebrew Channel open
+  2. Confirm both devices are on the same local network
+  3. Check that no firewall is blocking port 4299
+  4. Try pinging the Wii's IP address from your PC
+
+  **Slow transfer**
+  Wiiload transfers over TCP. On congested networks, ensure a stable Wi-Fi connection, or prefer a wired adapter on the Wii side.
+</Accordion>
+
+## GX Graphics API
+
+Both platforms use Nintendo's **GX** graphics API, a tile-based immediate-mode renderer. The engine's GX backend lives in `Engine/Source/Graphics/GX/`.
+
+Key characteristics of the GX backend:
+
+- **Immediate-mode geometry submission** — vertex data is written directly into the GPU FIFO
+- **65,535-vertex limit** per draw call (`MAX_MESH_VERTEX_COUNT`)
+- **10 GPU bone matrices** for skeletal meshes (`MAX_GPU_BONES`). Meshes exceeding this are CPU-skinned or split
+- **Single-buffered rendering** (`MAX_FRAMES = 1`) with vsync via `GX_SetCopyFilter`
+- No second-screen support (`SUPPORTS_SECOND_SCREEN = 0`)
+
+Native addon source can gate GX-specific code with:
+
+```cpp
+#if API_GX
+    // GX-only rendering path
+#endif
+```
+
+Or use the shared Dolphin/console platform flag:
+
+```cpp
+#if PLATFORM_DOLPHIN
+    // Shared Wii + GameCube code
+#elif PLATFORM_WII
+    // Wii-only code
+#elif PLATFORM_GAMECUBE
+    // GameCube-only code
+#endif
+```
+
+## Platform Constraints
+
+<CardGroup cols={2}>
+  <Card title="No TCP networking on GameCube" icon="network-wired">
+    The GameCube has no built-in networking. TCP/UDP sockets only work if a **Broadband Adapter** is attached. Without one, `NET_Initialize()` fails silently. The Wii has built-in Wi-Fi and Ethernet via the LAN Adapter.
+  </Card>
+  <Card title="Memory is limited" icon="memory">
+    The GameCube has 24 MB of main RAM; the Wii has 24 MB MEM1 + 64 MB MEM2. Asset budgets must be managed carefully. Audio wave buffers and textures compete for the same pool.
+  </Card>
+  <Card title="No dynamic addon loading" icon="puzzle-piece">
+    Consoles do not support `.dol` hot-loading at runtime. Native addons are compiled directly into the executable at package time using the `POLYPHASE_REGISTER_PLUGIN` static-init mechanism.
+  </Card>
+  <Card title="No RTTI or exceptions" icon="circle-xmark">
+    Both Makefiles compile with exceptions and RTTI disabled (`-fno-exceptions -fno-rtti` via the devkitPPC rules). Addon and game code must not use `dynamic_cast` or `try`/`catch`.
+  </Card>
+</CardGroup>
+
+## Key Source Files
+
+| File | Description |
+|------|-------------|
+| `Engine/Source/System/Dolphin/System_Dolphin.cpp` | Platform init/shutdown, file I/O, threading, time |
+| `Engine/Source/Graphics/GX/Graphics_GX.cpp` | GX rendering backend |
+| `Engine/Source/Input/Dolphin/Input_Dolphin.cpp` | Gamepad and Wii Remote input |
+| `Engine/Source/Audio/Dolphin/Audio_Dolphin.cpp` | ASND/Aram audio backend |
+| `Engine/Source/Network/Dolphin/Network_Dolphin.cpp` | TCP/UDP networking (Wii only) |
+| `Engine/Source/Graphics/GraphicsConstants.h` | `MAX_MESH_VERTEX_COUNT`, `MAX_GPU_BONES` per API |
+| `Engine/Makefile_Wii` | Wii build configuration |
+| `Engine/Makefile_GCN` | GameCube build configuration |

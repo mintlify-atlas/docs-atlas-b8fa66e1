@@ -1,0 +1,609 @@
+---
+title: "Audio & TimerManager Lua API — Polyphase Engine"
+sidebarTitle: "Audio"
+description: "Play, stop, and update 2D/3D sounds, control master volume, analyze audio in real time, and schedule timed callbacks with TimerManager in Lua."
+---
+
+The `Audio` global controls all sound playback in Polyphase Engine — from simple one-shot effects to spatially positioned 3D audio, master volume, per-class mixing, and real-time audio analysis for visualizers. `TimerManager` is also documented here because timed callbacks are the idiomatic way to trigger audio sequences and delay sound events in gameplay scripts.
+
+---
+
+## Audio
+
+### Audio.Play
+
+```lua
+Audio.Play(sound, volume, pitch, startTime, loop, priority)
+```
+
+Convenience alias for `Audio.PlaySound2D`. Plays a sound with no positional data.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `sound` | `SoundWave` | — | Sound wave asset to play |
+| `volume` | `number` | `1` | Volume multiplier |
+| `pitch` | `number` | `1` | Pitch multiplier |
+| `startTime` | `number` | `0` | Playback start offset in seconds |
+| `loop` | `boolean` | `false` | Loop the sound |
+| `priority` | `integer` | `0` | Voice priority (higher wins scarce voices) |
+
+---
+
+### Audio.PlaySound2D
+
+```lua
+Audio.PlaySound2D(sound, volume, pitch, startTime, loop, priority)
+```
+
+Plays a sound with no spatial positioning. Identical parameters to `Audio.Play`.
+
+```lua
+local coinSfx = LoadAsset("SFX_Coin")
+Audio.PlaySound2D(coinSfx, 0.8, 1.0)
+```
+
+---
+
+### Audio.PlaySound3D
+
+```lua
+Audio.PlaySound3D(sound, position, innerRadius, outerRadius, attenuationFunc, volume, pitch, startTime, loop, priority)
+```
+
+Plays a sound at a position in 3D world space with distance attenuation. **Alias:** `Audio.PlaySoundAtPosition`.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `sound` | `SoundWave` | — | Sound wave asset |
+| `position` | `Vector` | — | World-space position |
+| `innerRadius` | `number` | — | Distance inside which volume is maximum |
+| `outerRadius` | `number` | — | Distance at which sound is silent |
+| `attenuationFunc` | `AttenuationFunc (integer)` | `AttenuationFunc.Linear` | Volume rolloff curve |
+| `volume` | `number` | `1` | Volume multiplier |
+| `pitch` | `number` | `1` | Pitch multiplier |
+| `startTime` | `number` | `0` | Start offset in seconds |
+| `loop` | `boolean` | `false` | Loop the sound |
+| `priority` | `integer` | `0` | Voice priority |
+
+```lua
+local explosion = LoadAsset("SFX_Explosion")
+Audio.PlaySound3D(explosion, self:GetWorldPosition(), 5, 40)
+```
+
+---
+
+### Audio.PlaySoundAtPosition
+
+```lua
+Audio.PlaySoundAtPosition(sound, position, innerRadius, outerRadius, attenuationFunc, volume, pitch, startTime, loop, priority)
+```
+
+Identical to `Audio.PlaySound3D`. Preferred name going forward; `PlaySound3D` is kept for compatibility.
+
+---
+
+### Audio.Pause
+
+```lua
+Audio.Pause(sound)
+```
+
+Mutes every active voice of the given `SoundWave` by driving its volume to `0`. Voices continue to tick — this is a volume duck, not a transport pause. To resume audibility call `Audio.UpdateSound` with the desired volume.
+
+<Note>
+For a true transport pause that preserves cursor position, use an `Audio3D` node and call `Audio3D:PauseAudio()` instead.
+</Note>
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `sound` | `SoundWave` | Sound to mute |
+
+---
+
+### Audio.Stop
+
+```lua
+Audio.Stop(sound)
+```
+
+Alias for `Audio.StopSounds`. Stops every active voice of the given sound.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `sound` | `SoundWave` | Sound to stop |
+
+---
+
+### Audio.StopSounds
+
+```lua
+Audio.StopSounds(sound)
+```
+
+Stops all currently playing voices for a specific `SoundWave`. **Alias:** `Audio.StopSound`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `sound` | `SoundWave` | Sound wave to stop |
+
+---
+
+### Audio.StopAllSounds
+
+```lua
+Audio.StopAllSounds()
+```
+
+Stops every sound currently playing.
+
+---
+
+### Audio.UpdateSound
+
+```lua
+Audio.UpdateSound(sound, volume, pitch, priority)
+```
+
+Updates volume, pitch, and priority for all active voices of a `SoundWave`.
+
+<Warning>
+This affects **all** voices of the asset — if the same wave plays on multiple sources simultaneously, all of them change.
+</Warning>
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `sound` | `SoundWave` | — | Sound to update |
+| `volume` | `number` | — | New volume |
+| `pitch` | `number` | — | New pitch |
+| `priority` | `integer` | `0` | New priority |
+
+---
+
+### Audio.IsSoundPlaying
+
+```lua
+playing = Audio.IsSoundPlaying(sound)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `sound` | `SoundWave` | Sound to check |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `playing` | `boolean` | Whether any voice of this sound is active |
+
+---
+
+## Master & Class Volume
+
+### Audio.SetMasterVolume
+
+```lua
+Audio.SetMasterVolume(volume)
+```
+
+Sets the global master volume multiplier.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `volume` | `number` | Master volume (`0` = silent, `1` = full) |
+
+---
+
+### Audio.GetMasterVolume
+
+```lua
+volume = Audio.GetMasterVolume()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `volume` | `number` | Current master volume |
+
+---
+
+### Audio.SetMasterPitch
+
+```lua
+Audio.SetMasterPitch(pitch)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `pitch` | `number` | Global pitch multiplier |
+
+---
+
+### Audio.GetMasterPitch
+
+```lua
+pitch = Audio.GetMasterPitch()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `pitch` | `number` | Current master pitch |
+
+---
+
+### Audio.SetAudioClassVolume
+
+```lua
+Audio.SetAudioClassVolume(volume)
+```
+
+Sets the volume multiplier for an audio class. Audio classes group sounds for unified volume/pitch control (e.g. music, SFX, voice).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `volume` | `number` | Volume multiplier |
+
+---
+
+### Audio.GetAudioClassVolume
+
+```lua
+volume = Audio.GetAudioClassVolume()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `volume` | `number` | Audio class volume multiplier |
+
+---
+
+### Audio.SetAudioClassPitch
+
+```lua
+Audio.SetAudioClassPitch(pitch)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `pitch` | `number` | Pitch multiplier |
+
+---
+
+### Audio.GetAudioClassPitch
+
+```lua
+pitch = Audio.GetAudioClassPitch()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `pitch` | `number` | Audio class pitch multiplier |
+
+---
+
+## Audio3D Node — Voice Management
+
+For sounds attached to a scene node use the `Audio3D` node rather than the global `Audio.*` functions. The key methods are:
+
+| Goal | Call sequence |
+|------|---------------|
+| Start a track on an idle `Audio3D` | `SetSoundWave(w)` → `PlayAudio()` |
+| Switch the track on a playing `Audio3D` | `SetSoundWave(w)` → `PlayAudio()` — voice swap is automatic |
+| Pause but keep position (resume later) | `PauseAudio()` |
+| Stop and rewind | `StopAudio()` |
+| Hard-kill the voice immediately | `ResetAudio()` |
+
+```lua
+-- Switch music tracks on the same Audio3D node
+local nextTrack = LoadAsset("MUS_World2")
+self.audioPlayer:SetSoundWave(nextTrack)
+self.audioPlayer:PlayAudio()
+```
+
+---
+
+## SoundFinished Signal
+
+The audio system broadcasts a `"SoundFinished"` signal through the global `SignalBus` each time a wave reaches the end of one play, including every wrap of a looping voice.
+
+<Note>
+User-initiated stops (`StopSound`, `StopAllSounds`, `Audio3D:StopAudio`) do **not** fire `SoundFinished`.
+</Note>
+
+```lua
+function MusicController:Start()
+    SignalBus.Subscribe("SoundFinished", self, function(self, soundWave)
+        if soundWave == self.currentTrack then
+            self:PlayNextTrack()
+        end
+    end)
+end
+```
+
+---
+
+## Audio Analysis
+
+Real-time analysis functions build visualizers, loudness meters, and spectrum displays. They return `0` (or zero-filled tables) when no voice is active on the queried slot — visualizer code never needs to special-case idle audio.
+
+### Audio.GetDuration
+
+```lua
+seconds = Audio.GetDuration(voiceIndex)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `voiceIndex` | `integer` | Voice mixer slot |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `seconds` | `number` | Wave duration in seconds; `0` for idle voices |
+
+---
+
+### Audio.GetPlayTimeNormalized
+
+```lua
+t = Audio.GetPlayTimeNormalized(voiceIndex)
+```
+
+Current playback cursor expressed as `[0, 1]` of the wave's duration. Looping voices wrap; non-looping voices clamp at `1.0`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `voiceIndex` | `integer` | Voice mixer slot |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `t` | `number` | Normalized cursor in `[0, 1]` |
+
+---
+
+### Audio.GetRMS
+
+```lua
+rms = Audio.GetRMS(voiceIndex)
+```
+
+Root-mean-square amplitude of the most recent playback window.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `voiceIndex` | `integer` | Voice mixer slot |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `rms` | `number` | RMS amplitude in `[0, 1]` |
+
+---
+
+### Audio.GetLoudness
+
+```lua
+loudness = Audio.GetLoudness(voiceIndex)
+```
+
+Perceptual loudness in `[0, 1]` computed from RMS with a -60 dB floor. Ideal for bar heights.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `voiceIndex` | `integer` | Voice mixer slot |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `loudness` | `number` | Normalized loudness in `[0, 1]` |
+
+---
+
+### Audio.GetLoudnessDb
+
+```lua
+dB = Audio.GetLoudnessDb(voiceIndex)
+```
+
+Raw dBFS loudness clamped to `[-60, 0]`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `voiceIndex` | `integer` | Voice mixer slot |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `dB` | `number` | Loudness in dBFS |
+
+---
+
+### Audio.GetFrequencies
+
+```lua
+magnitude = Audio.GetFrequencies(voiceIndex, startHz, endHz)
+```
+
+Average FFT magnitude across the specified frequency band. Perfect for simple bass/mid/treble bars.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `voiceIndex` | `integer` | Voice mixer slot |
+| `startHz` | `number` | Lower edge of band in Hz |
+| `endHz` | `number` | Upper edge of band in Hz |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `magnitude` | `number` | Average band magnitude |
+
+---
+
+### Audio.GetSpectrum
+
+```lua
+bins = Audio.GetSpectrum(voiceIndex, startHz, endHz, numBins)
+```
+
+FFT magnitudes binned across a frequency range for spectrum displays.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `voiceIndex` | `integer` | Voice mixer slot |
+| `startHz` | `number` | Lower edge in Hz |
+| `endHz` | `number` | Upper edge in Hz |
+| `numBins` | `integer` | Number of output bins (1–1024) |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `bins` | `table` | Array of `number` magnitudes, length `numBins` |
+
+```lua
+-- 3-bar bass/mid/treble visualizer
+function Visualizer:Tick(dt)
+    local bass   = Audio.GetFrequencies(1,    20,  250)
+    local mid    = Audio.GetFrequencies(1,   250, 4000)
+    local treble = Audio.GetFrequencies(1,  4000, 20000)
+    self.bassBar:SetHeight(bass   * 100)
+    self.midBar:SetHeight(mid    * 100)
+    self.trebleBar:SetHeight(treble * 100)
+end
+```
+
+---
+
+### Audio.GetStreamRMS / GetStreamLoudness / GetStreamLoudnessDb / GetStreamFrequencies / GetStreamSpectrum
+
+Streaming equivalents of the analysis functions above, indexed by `streamId` from `AUD_OpenStream` rather than voice index.
+
+| Function | Signature |
+|----------|-----------|
+| `GetStreamRMS` | `rms = Audio.GetStreamRMS(streamId)` |
+| `GetStreamLoudness` | `loudness = Audio.GetStreamLoudness(streamId)` |
+| `GetStreamLoudnessDb` | `dB = Audio.GetStreamLoudnessDb(streamId)` |
+| `GetStreamFrequencies` | `magnitude = Audio.GetStreamFrequencies(streamId, startHz, endHz)` |
+| `GetStreamSpectrum` | `bins = Audio.GetStreamSpectrum(streamId, startHz, endHz, numBins)` |
+
+---
+
+## TimerManager
+
+`TimerManager` schedules callback functions to fire after a delay, with optional looping. Timer IDs let you pause, resume, reset, or cancel timers independently.
+
+### TimerManager.SetTimer
+
+```lua
+id = TimerManager.SetTimer(func, time, loop)
+```
+
+Registers a callback to be called after `time` seconds. Returns a timer ID for later control.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `func` | `function` | — | Callback to invoke |
+| `time` | `number` | — | Delay in seconds |
+| `loop` | `boolean` | `false` | Repeat indefinitely |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `id` | `integer` | Timer ID |
+
+```lua
+-- Play a siren every 5 seconds
+local sirenSfx = LoadAsset("SFX_Siren")
+local timerId = TimerManager.SetTimer(function()
+    Audio.PlaySound2D(sirenSfx)
+end, 5.0, true)
+```
+
+---
+
+### TimerManager.ClearTimer
+
+```lua
+TimerManager.ClearTimer(id)
+```
+
+Cancels and removes a specific timer.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | `integer` | Timer ID to cancel |
+
+---
+
+### TimerManager.ClearAllTimers
+
+```lua
+TimerManager.ClearAllTimers()
+```
+
+Cancels every active timer.
+
+---
+
+### TimerManager.PauseTimer
+
+```lua
+TimerManager.PauseTimer(id)
+```
+
+Pauses a timer, freezing its countdown.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | `integer` | Timer ID |
+
+---
+
+### TimerManager.ResumeTimer
+
+```lua
+TimerManager.ResumeTimer(id)
+```
+
+Resumes a paused timer from where it was frozen.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | `integer` | Timer ID |
+
+---
+
+### TimerManager.ResetTimer
+
+```lua
+TimerManager.ResetTimer(id)
+```
+
+Resets the timer's remaining time back to the original duration.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | `integer` | Timer ID |
+
+---
+
+### TimerManager.GetTimeRemaining
+
+```lua
+time = TimerManager.GetTimeRemaining(id)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | `integer` | Timer ID |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `time` | `number` | Seconds remaining before the callback fires |
+
+```lua
+-- Timed level sequence example
+function BossRoom:Start()
+    self.warningTimer = TimerManager.SetTimer(function()
+        Audio.PlaySound2D(LoadAsset("SFX_Warning"))
+        Log.Debug("Boss arrives in 5 seconds!")
+    end, 25.0)
+
+    self.bossTimer = TimerManager.SetTimer(function()
+        world:SpawnNode("BossDragon", Vec(0, 0, 0))
+    end, 30.0)
+end
+
+function BossRoom:Destroy()
+    TimerManager.ClearTimer(self.warningTimer)
+    TimerManager.ClearTimer(self.bossTimer)
+end
+```

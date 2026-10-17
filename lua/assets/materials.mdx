@@ -1,0 +1,422 @@
+---
+title: "Material Asset Lua APIs — Material, MaterialInstance, MaterialLite"
+sidebarTitle: "Materials"
+description: "Lua API for Polyphase material assets: Material base queries, MaterialInstance creation, and MaterialLite's full cross-platform parameter and texture API."
+---
+
+Polyphase supports two material pipelines. **MaterialBase / MaterialInstance** use custom GLSL shaders and are only available on Vulkan platforms. **MaterialLite** is a simpler, cross-platform material that supports textures, colors, blend modes, fresnel, UV animation, and TEV modes.
+
+All material types inherit from `Material` which itself inherits from [`Asset`](/lua/assets/asset).
+
+---
+
+## Material (base class)
+
+`Material` provides shared queries and the parameter API used by MaterialBase and MaterialInstance.
+
+### Type Checks
+
+#### `Material:IsBase()`
+
+**Returns:** `boolean` — `true` if this is a `MaterialBase`.
+
+---
+
+#### `Material:IsInstance()`
+
+**Returns:** `boolean` — `true` if this is a `MaterialInstance`.
+
+---
+
+#### `Material:IsLite()`
+
+**Returns:** `boolean` — `true` if this is a `MaterialLite`.
+
+---
+
+### Shader Parameters (MaterialBase / MaterialInstance only)
+
+#### `Material:SetScalarParameter(name, value)`
+
+Set a named scalar parameter.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Parameter name. |
+| `value` | `number` | Scalar value. |
+
+---
+
+#### `Material:GetScalarParameter(name)`
+
+Get a named scalar parameter.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Parameter name. |
+
+**Returns:** `number` — current value.
+
+---
+
+#### `Material:SetVectorParameter(name, value)`
+
+Set a named vector parameter.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Parameter name. |
+| `value` | `Vector` | Vector value. |
+
+---
+
+#### `Material:GetVectorParameter(name)`
+
+**Returns:** `Vector` — current value.
+
+---
+
+#### `Material:SetTextureParameter(name, value)`
+
+Set a named texture parameter.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Parameter name. |
+| `value` | `Texture` | Texture asset. |
+
+---
+
+#### `Material:GetTextureParameter(name)`
+
+**Returns:** `Texture` — current texture.
+
+---
+
+### Rendering Properties (read-only on MaterialBase/Instance)
+
+#### `Material:GetBlendMode()`
+
+Get the blend mode. See `BlendMode` enum: `Opaque`, `Masked`, `Translucent`, `Additive`.
+
+**Returns:** `integer` — `BlendMode` value.
+
+---
+
+#### `Material:GetMaskCutoff()`
+
+Get the alpha mask discard threshold (0–1). Fragments below this alpha are discarded in `Masked` mode.
+
+**Returns:** `number` — cutoff value.
+
+---
+
+#### `Material:GetSortPriority()`
+
+Translucent sort priority. Same-priority objects are sorted by depth.
+
+**Returns:** `integer` — sort priority.
+
+---
+
+#### `Material:IsDepthTestDisabled()`
+
+**Returns:** `boolean` — `true` if depth testing is disabled.
+
+---
+
+#### `Material:ShouldApplyFog()`
+
+**Returns:** `boolean` — `true` if fog is applied to fragments.
+
+---
+
+#### `Material:GetCullMode()`
+
+Get the triangle cull mode. See `CullMode` enum: `None`, `Back`, `Front`.
+
+**Returns:** `integer` — `CullMode` value.
+
+---
+
+## MaterialBase
+
+`MaterialBase` compiles from a custom GLSL vertex and fragment shader file. It is Vulkan-only.
+
+Inherits: `Material` → `Asset`
+
+`MaterialBase` has no additional Lua methods beyond `Material`. Parameters are set in the shader file; use `SetScalarParameter`, `SetVectorParameter`, and `SetTextureParameter` to drive them from Lua.
+
+---
+
+## MaterialInstance
+
+`MaterialInstance` references a `MaterialBase` and overrides its default parameter values. The shader is not recompiled — only the uniform data changes.
+
+Inherits: `Material` → `Asset`
+
+### `MaterialInstance.Create(srcMat)`
+
+Create a new `MaterialInstance` from a source `MaterialBase` or another `MaterialInstance`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `srcMat` | `Material` | Source material to inherit from. |
+
+**Returns:** `MaterialInstance` — newly created instance.
+
+```lua
+local base  = LoadAsset("Materials/M_PBR_Base")
+local inst  = MaterialInstance.Create(base)
+inst:SetVectorParameter("AlbedoColor", Vec(1, 0, 0, 1))
+self.mesh:SetMaterialOverride(inst)
+```
+
+---
+
+### `MaterialInstance:GetBaseMaterial()`
+
+Get the `MaterialBase` this instance references.
+
+**Returns:** `MaterialBase` — base material.
+
+---
+
+### `MaterialInstance:SetBaseMaterial(base)`
+
+Change the base material this instance references.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `base` | `MaterialBase` | New base material. |
+
+---
+
+## MaterialLite
+
+`MaterialLite` is a cross-platform material that works on all Polyphase target platforms. It supports up to four texture slots, a color tint, blend mode, UV animation, fresnel, specular, opacity, and the TEV compositing system for older hardware.
+
+Inherits: `Material` → `Asset`
+
+### `MaterialLite.Create(srcMat)`
+
+Create a new `MaterialLite`, optionally copying properties from an existing one.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `srcMat` | `MaterialLite` | Optional source to copy from. |
+
+**Returns:** `MaterialLite` — newly created material.
+
+```lua
+local mat = MaterialLite.Create()
+mat:SetColor(Vec(0.8, 0.2, 0.2, 1.0))
+mat:SetBlendMode(BlendMode.Opaque)
+```
+
+---
+
+### Textures
+
+#### `MaterialLite:SetTexture(slot, texture)`
+
+Assign a texture to a slot (1–4).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `slot` | `integer` | Texture slot (1–4). |
+| `texture` | `Texture` | Texture asset. |
+
+---
+
+#### `MaterialLite:GetTexture(slot)`
+
+Get the texture in a slot.
+
+**Returns:** `Texture` — assigned texture.
+
+---
+
+### Color
+
+#### `MaterialLite:SetColor(color)` / `MaterialLite:GetColor()`
+
+Material base color.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `color` | `Vector` | RGBA color. |
+
+---
+
+### Blend Mode & Shading Model
+
+#### `MaterialLite:SetBlendMode(blendMode)`
+
+Set the blend mode. See `BlendMode` enum.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `blendMode` | `integer` | `BlendMode` value. |
+
+---
+
+#### `MaterialLite:GetShadingModel()` / `MaterialLite:SetShadingModel(shadingModel)`
+
+Shading model. See `ShadingModel` enum: `Unlit`, `Lit`, `Toon`.
+
+---
+
+### Opacity & Mask
+
+#### `MaterialLite:GetOpacity()` / `MaterialLite:SetOpacity(opacity)`
+
+Opacity for `Translucent` and `Additive` materials.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `opacity` | `number` | Opacity 0–1. |
+
+---
+
+#### `MaterialLite:SetMaskCutoff(cutoff)`
+
+Alpha discard threshold for `Masked` materials.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `cutoff` | `number` | Cutoff 0–1. |
+
+---
+
+### Sort Priority & Depth Test
+
+#### `MaterialLite:SetSortPriority(priority)`
+
+Translucent sort priority.
+
+---
+
+#### `MaterialLite:SetDepthTestDisabled(disabled)`
+
+Disable depth testing for this material.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `disabled` | `boolean` | `true` to disable depth testing. |
+
+---
+
+### Specular & Lighting
+
+#### `MaterialLite:GetSpecular()` / `MaterialLite:SetSpecular(specular)`
+
+Specular intensity.
+
+---
+
+#### `MaterialLite:GetWrapLighting()` / `MaterialLite:SetWrapLighting(wrap)`
+
+Wrap lighting intensity (Vulkan only).
+
+---
+
+### Emission
+
+#### `MaterialLite:GetEmission()` / `MaterialLite:SetEmission(emission)`
+
+Emission intensity. Used by experimental light baking and path tracing.
+
+---
+
+### Fresnel
+
+#### `MaterialLite:EnableFresnel(enable)` / `MaterialLite:IsFresnelEnabled()`
+
+Enable or disable fresnel shading.
+
+---
+
+#### `MaterialLite:GetFresnelColor()` / `MaterialLite:SetFresnelColor(color)`
+
+Fresnel highlight color.
+
+---
+
+#### `MaterialLite:GetFresnelPower()` / `MaterialLite:SetFresnelPower(power)`
+
+Fresnel falloff power.
+
+---
+
+### UV Animation
+
+#### `MaterialLite:GetUvOffset(index)` / `MaterialLite:SetUvOffset(offset, index)`
+
+UV offset for a UV channel (1 or 2). Use for scrolling textures.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `offset` | `Vector` | UV offset. |
+| `index` | `integer` | UV channel index (1 or 2). Defaults to 1. |
+
+---
+
+#### `MaterialLite:GetUvScale(index)` / `MaterialLite:SetUvScale(scale, index)`
+
+UV scale for a UV channel.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `scale` | `Vector` | UV scale. |
+| `index` | `integer` | UV channel index (1 or 2). Defaults to 1. |
+
+---
+
+### UV Mapping
+
+#### `MaterialLite:GetUvMap(slot)` / `MaterialLite:SetUvMap(slot, uvMap)`
+
+Get or set which UV channel (1 or 2) is used for a given texture slot.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `slot` | `integer` | Texture slot (1–4). |
+| `uvMap` | `integer` | UV channel (1 or 2). |
+
+---
+
+### TEV Modes
+
+TEV (Texture Environment) modes control how multiple textures are combined. See `TevMode` enum: `Replace`, `Modulate`, `Decal`, `Add`, `SignedAdd`, `Subtract`, `Interpolate`.
+
+#### `MaterialLite:GetTevMode(slot)` / `MaterialLite:SetTevMode(slot, tevMode)`
+
+Get or set the TEV compositing mode for a texture slot.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `slot` | `integer` | Texture slot. |
+| `tevMode` | `integer` | `TevMode` enum value. |
+
+---
+
+## Usage Example
+
+```lua
+-- Create a MaterialLite for a lava effect with UV scroll
+function LavaPlane:Start()
+    local mat = MaterialLite.Create()
+    mat:SetTexture(1, LoadAsset("Textures/T_Lava"))
+    mat:SetColor(Vec(1, 0.4, 0, 1))
+    mat:SetShadingModel(ShadingModel.Unlit)
+    mat:SetBlendMode(BlendMode.Opaque)
+    self.material = mat
+    self:SetMaterialOverride(mat)
+end
+
+function LavaPlane:Tick(dt)
+    local offset = self.material:GetUvOffset()
+    self.material:SetUvOffset(Vec(offset.x + dt * 0.05, offset.y + dt * 0.02))
+end
+```

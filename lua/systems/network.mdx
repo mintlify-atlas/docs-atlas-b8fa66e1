@@ -1,0 +1,661 @@
+---
+title: "Network Lua API — Multiplayer & Sessions in Polyphase Engine"
+sidebarTitle: "Network"
+description: "Open and join multiplayer sessions, query clients, replicate state, handle connection callbacks, and monitor bandwidth from Lua in Polyphase Engine."
+---
+
+The `Network` global provides everything needed to build multiplayer games in Polyphase Engine: session hosting and discovery, client connection management, replication settings, network relevancy, bandwidth monitoring, and connection event callbacks. The API supports both LAN and online (Steam) sessions.
+
+---
+
+## Session Lifecycle
+
+### Network.OpenSession
+
+```lua
+Network.OpenSession(options)
+```
+
+Opens a multiplayer session, making this host a server.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `options` | `table` | Optional configuration table |
+
+**options fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `string` | Display name for the session/lobby |
+| `lan` | `boolean` | Restrict to local network only |
+| `private` | `boolean` | Friends-only session |
+| `port` | `integer` | Port (may not be respected for online sessions) |
+| `maxPlayers` | `integer` | Max players including the server host |
+
+```lua
+Network.OpenSession({
+    name       = "My Game Room",
+    lan        = false,
+    private    = false,
+    maxPlayers = 4,
+})
+```
+
+---
+
+### Network.CloseSession
+
+```lua
+Network.CloseSession()
+```
+
+Closes the hosted session if this host is the server, or disconnects from a remote session if this host is a client.
+
+---
+
+### Network.JoinSession
+
+```lua
+Network.JoinSession(data)
+```
+
+Joins a multiplayer session.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `data` | `table` | Connection data |
+
+**data fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ipAddress` | `string` | Server IP address (use for LAN) |
+| `port` | `integer` | Server port (use for LAN) |
+| `lobbyId` | `string` | Online platform lobby ID (use for Steam) |
+
+```lua
+-- Join a LAN session
+Network.JoinSession({ ipAddress = "192.168.1.42", port = 7777 })
+
+-- Join via Steam lobby
+Network.JoinSession({ lobbyId = "109775243452345" })
+```
+
+---
+
+### Network.Connect
+
+```lua
+Network.Connect(ipAddress, port)
+```
+
+Connects directly to a server by IP and port.
+
+<Note>
+Prefer `Network.JoinSession()` over `Network.Connect()` — it handles both LAN and online sessions with session discovery metadata.
+</Note>
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `ipAddress` | `string` | — | Server IP address |
+| `port` | `integer` | DefaultPort | Server port |
+
+---
+
+### Network.Disconnect
+
+```lua
+Network.Disconnect()
+```
+
+Disconnects from the current session. Equivalent to `Network.CloseSession()`.
+
+---
+
+## Session Discovery
+
+### Network.BeginSessionSearch
+
+```lua
+Network.BeginSessionSearch()
+```
+
+Starts scanning for available network sessions. Use `GetNumSessions()`, `GetSession()`, or `GetSessions()` to read discovered sessions.
+
+---
+
+### Network.EndSessionSearch
+
+```lua
+Network.EndSessionSearch()
+```
+
+Stops the session search.
+
+---
+
+### Network.IsSearching
+
+```lua
+searching = Network.IsSearching()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `searching` | `boolean` | `true` while a session search is in progress |
+
+---
+
+### Network.EnableSessionBroadcast
+
+```lua
+Network.EnableSessionBroadcast(enable)
+```
+
+Enables LAN session broadcasting so other clients can discover this session. Only affects LAN sessions — Steam sessions are discovered automatically.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enable` | `boolean` | Enable broadcast |
+
+---
+
+### Network.IsSessionBroadcastEnabled
+
+```lua
+enabled = Network.IsSessionBroadcastEnabled()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `enabled` | `boolean` | Broadcast is active |
+
+---
+
+### Network.GetNumSessions
+
+```lua
+num = Network.GetNumSessions()
+```
+
+Returns the number of sessions found after `BeginSessionSearch()` was called.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `num` | `integer` | Number of discovered sessions |
+
+---
+
+### Network.GetSession
+
+```lua
+sessionData = Network.GetSession(index)
+```
+
+Returns data for a specific discovered session.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `integer` | Session index (1-based) |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `sessionData` | `table` | Session info: `{ ipAddress, port, lobbyId, name, maxPlayers, numPlayers }` |
+
+---
+
+### Network.GetSessions
+
+```lua
+sessionArray = Network.GetSessions()
+```
+
+Returns an array of all discovered sessions. Each element has the same fields as `GetSession`.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `sessionArray` | `table` | Array of session data tables |
+
+```lua
+-- Session browser example
+Network.BeginSessionSearch()
+
+function SessionBrowser:Tick(dt)
+    self.sessionList:Clear()
+    local sessions = Network.GetSessions()
+    for _, s in ipairs(sessions) do
+        self.sessionList:AddRow(s.name .. " (" .. s.numPlayers .. "/" .. s.maxPlayers .. ")")
+    end
+end
+
+function SessionBrowser:OnJoinClicked(index)
+    Network.EndSessionSearch()
+    Network.JoinSession(Network.GetSession(index))
+end
+```
+
+---
+
+## Client Management (Server Only)
+
+### Network.GetNumClients
+
+```lua
+num = Network.GetNumClients()
+```
+
+<Warning>
+Only call this on the server host — results are inaccurate on clients.
+</Warning>
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `num` | `integer` | Number of currently connected clients |
+
+---
+
+### Network.GetMaxClients
+
+```lua
+max = Network.GetMaxClients()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `max` | `integer` | Maximum allowed clients |
+
+---
+
+### Network.GetClients
+
+```lua
+clients = Network.GetClients()
+```
+
+Returns an array of connected client profiles. Only accurate on the server.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `clients` | `table` | Array of client profile tables |
+
+**Client profile fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ipAddress` | `string` | Client IP address |
+| `port` | `integer` | Client port |
+| `hostId` | `integer` | Host ID |
+| `onlineId` | `string` | Platform online ID (e.g. SteamID) |
+| `ping` | `number` | Round-trip latency in ms |
+| `ready` | `boolean` | Ready state |
+
+---
+
+### Network.FindNetClient
+
+```lua
+client = Network.FindNetClient(hostId)
+```
+
+Looks up a client by host ID, returning the same profile table as `GetClients`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `hostId` | `integer` | Host ID to look up |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `client` | `table` | Client profile, or `nil` |
+
+---
+
+### Network.Kick
+
+```lua
+Network.Kick(hostId)
+```
+
+Kicks a client from the session. Server only.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `hostId` | `integer` | Host ID of the client to kick |
+
+---
+
+## Host Identity
+
+### Network.GetNetStatus
+
+```lua
+status = Network.GetNetStatus()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `status` | `string` | `"Client"`, `"Server"`, `"Connecting"`, or `"Local"` |
+
+---
+
+### Network.IsServer
+
+```lua
+server = Network.IsServer()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `server` | `boolean` | This host is the server |
+
+---
+
+### Network.IsClient
+
+```lua
+client = Network.IsClient()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `client` | `boolean` | This host is a client |
+
+---
+
+### Network.IsLocal
+
+```lua
+local = Network.IsLocal()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `local` | `boolean` | Playing locally (not in a network session) |
+
+---
+
+### Network.IsAuthority
+
+```lua
+authority = Network.IsAuthority()
+```
+
+Returns `true` if this host is the server or is playing locally — i.e. has gameplay authority to make authoritative game state decisions.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `authority` | `boolean` | Has gameplay authority |
+
+---
+
+### Network.GetHostId
+
+```lua
+hostId = Network.GetHostId()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `hostId` | `integer` | This host's network ID |
+
+---
+
+## Replication Settings
+
+### Network.EnableIncrementalReplication
+
+```lua
+Network.EnableIncrementalReplication(enable)
+```
+
+Enables or disables incremental replication, which sends only changed state each frame rather than the full state.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enable` | `boolean` | Enable incremental replication |
+
+---
+
+### Network.EnableReliableReplication
+
+```lua
+Network.EnableReliableReplication(enable)
+```
+
+When enabled, all replicated state is guaranteed to arrive in order. This can cause lag spikes if large amounts of data are replicated simultaneously.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enable` | `boolean` | Enable reliable replication |
+
+---
+
+## Network Relevancy
+
+### Network.EnableNetRelevancy
+
+```lua
+Network.EnableNetRelevancy(enable)
+```
+
+When enabled, replicated nodes that are far from a client are not replicated, saving bandwidth.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enable` | `boolean` | Enable net relevancy |
+
+---
+
+### Network.SetRelevancyDistance
+
+```lua
+Network.SetRelevancyDistance(distance)
+```
+
+Sets the distance beyond which nodes become irrelevant and stop being replicated to far clients.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `distance` | `number` | Relevancy distance in world units |
+
+---
+
+### Network.SetPawn
+
+```lua
+Network.SetPawn(hostId, node)
+```
+
+Assigns a pawn node to a host, used for relevancy checks and gameplay tracking.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `hostId` | `integer` | Host to assign pawn to |
+| `node` | `Node` | Node to serve as the pawn |
+
+---
+
+### Network.GetPawn
+
+```lua
+pawn = Network.GetPawn(hostId)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `hostId` | `integer` | Host to query |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `pawn` | `Node` | Currently assigned pawn |
+
+---
+
+## Bandwidth Monitoring
+
+### Network.GetBytesSent
+
+```lua
+num = Network.GetBytesSent()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `num` | `integer` | Bytes sent this frame |
+
+---
+
+### Network.GetBytesReceived
+
+```lua
+num = Network.GetBytesReceived()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `num` | `integer` | Bytes received this frame |
+
+---
+
+### Network.GetUploadRate
+
+```lua
+rate = Network.GetUploadRate()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `rate` | `number` | Average upload rate |
+
+---
+
+### Network.GetDownloadRate
+
+```lua
+rate = Network.GetDownloadRate()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `rate` | `number` | Average download rate |
+
+---
+
+## Connection Callbacks
+
+These callbacks let scripts respond to network lifecycle events.
+
+### Network.SetConnectCallback
+
+```lua
+Network.SetConnectCallback(func)
+```
+
+Registers a callback fired on the **server** whenever a new client connects.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `func` | `function` | `func(client)` — `client` is a host profile table |
+
+```lua
+Network.SetConnectCallback(function(client)
+    Log.Debug("Player joined: " .. client.onlineId .. " (hostId=" .. client.hostId .. ")")
+    -- Spawn their avatar
+    local pawn = world:SpawnNode("PlayerCharacter")
+    Network.SetPawn(client.hostId, pawn)
+end)
+```
+
+---
+
+### Network.SetAcceptCallback
+
+```lua
+Network.SetAcceptCallback(func)
+```
+
+Fires on the **client** when the server accepts the connection request.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `func` | `function` | `func()` — no arguments |
+
+---
+
+### Network.SetRejectCallback
+
+```lua
+Network.SetRejectCallback(func)
+```
+
+Fires on the **client** when the server refuses the connection.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `func` | `function` | `func(reason)` — `reason` is an integer: `0` = InvalidGameCode, `1` = VersionMismatch, `2` = SessionFull |
+
+```lua
+Network.SetRejectCallback(function(reason)
+    local reasons = { [0]="Invalid game code", [1]="Version mismatch", [2]="Session full" }
+    Log.Warning("Connection rejected: " .. (reasons[reason] or "Unknown"))
+end)
+```
+
+---
+
+### Network.SetDisconnectCallback
+
+```lua
+Network.SetDisconnectCallback(func)
+```
+
+Fires on the **server** when a client disconnects or is dropped.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `func` | `function` | `func(client)` — `client` is a host profile table |
+
+---
+
+### Network.SetKickCallback
+
+```lua
+Network.SetKickCallback(func)
+```
+
+Fires on the **client** when it is kicked (session close, timeout, or forced kick).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `func` | `function` | `func(reason)` — `reason` is an integer: `0` = SessionClose, `1` = Timeout, `2` = Forced |
+
+---
+
+## Full Multiplayer Example
+
+```lua
+-- Server-side game manager
+function GameManager:Start()
+    if Network.IsAuthority() then
+        Network.OpenSession({
+            name       = "Polyphase Game",
+            maxPlayers = 8,
+            lan        = false,
+        })
+
+        Network.SetConnectCallback(function(client)
+            local spawn = self:GetSpawnPoint()
+            local pawn  = world:SpawnNode("PlayerPawn", spawn)
+            Network.SetPawn(client.hostId, pawn)
+            Log.Debug("Spawned pawn for " .. client.onlineId)
+        end)
+
+        Network.SetDisconnectCallback(function(client)
+            local pawn = Network.GetPawn(client.hostId)
+            if pawn then pawn:Destroy() end
+        end)
+
+        Network.EnableNetRelevancy(true)
+        Network.SetRelevancyDistance(200)
+    end
+end
+```

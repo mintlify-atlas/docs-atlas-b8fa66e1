@@ -1,0 +1,234 @@
+---
+title: "Linux Developer Environment Setup for Polyphase"
+sidebarTitle: "Linux"
+description: "Install build essentials, Vulkan SDK 1.4.350.0, devkitPro toolchains, and libogc2 to compile and package Polyphase Engine on Linux."
+---
+
+This guide covers setting up a complete Linux development environment for Polyphase Engine. Everything listed below is required unless marked optional — Polyphase always packages for GameCube, Wii, and 3DS, so the devkitPro toolchains are part of the baseline setup.
+
+## Required Packages
+
+| Install | Needed for | Verify with |
+|---------|-----------|-------------|
+| **`g++`, `make`, `cmake`, `pkg-config`**, X11, ALSA, PulseAudio, curl, OpenSSL dev packages | Everything | `g++ --version`, `cmake --version` |
+| **Vulkan SDK 1.4.350.0** (LunarG) + distro `libvulkan-dev` | Editor and every game build; `glslc` for shaders | `vulkaninfo --summary` prints a device |
+| **devkitPro pacman** with `wii-dev` and `3ds-dev` | Packaging for Wii, GameCube, and 3DS | `$DEVKITPPC/bin/powerpc-eabi-g++ --version` |
+| **`libogc2`**, `libogc2-libdvm`, `gamecube-tools-git` | Packaging for **GameCube** (libogc2, not the stock libogc) | `ls /opt/devkitpro/libogc2/gamecube/lib` |
+| FFmpeg dev packages *(optional)* | Projects that use the VideoPlayer addon | `pkg-config --modversion libavformat` |
+| `rpm` / `appimagetool` *(optional)* | Linux RPM and AppImage installer targets | `rpmbuild --version`, `appimagetool --version` |
+| Docker *(optional)* | Building in the maintained container | `docker --version` |
+
+<Steps>
+
+### Pull Submodules
+
+Before building, initialise all Git submodules from the repository root:
+
+```bash
+git submodule update --init --recursive
+```
+
+### Install System Packages
+
+<Tabs>
+  <Tab title="Debian / Ubuntu">
+    ```bash
+    sudo apt install g++ make libx11-dev libasound2-dev libpulse-dev libcurl4 cmake pkg-config libssl-dev
+    ```
+
+    For the VideoPlayer addon (FFmpeg-backed video playback):
+
+    ```bash
+    sudo apt install libavformat-dev libavcodec-dev libavutil-dev libswscale-dev libswresample-dev
+    ```
+
+    <Note>
+      On **Ubuntu 24.04+**, the ALSA runtime library was renamed from `libasound2` to `libasound2t64` as part of the 64-bit time transition. The `-dev` package (`libasound2-dev`) still works for building. If you ship a binary and need to list a runtime dependency, use `libasound2t64` on 24.04+.
+    </Note>
+  </Tab>
+  <Tab title="Arch Linux">
+    ```bash
+    sudo pacman -S gcc make libx11 alsa-lib libpulse curl cmake pkgconf openssl vulkan-icd-loader git python
+    ```
+
+    For the VideoPlayer addon:
+
+    ```bash
+    sudo pacman -S ffmpeg
+    ```
+
+    <Note>
+      `vulkan-icd-loader` is the Arch equivalent of `libvulkan-dev`. You still need the LunarG SDK tarball in the next step for `glslc`, `shaderc`, and `spirv-cross`. If you get a dependency error on `alsa-lib`, try `lib32-alsa-lib` instead.
+    </Note>
+  </Tab>
+</Tabs>
+
+### Install the Vulkan SDK
+
+Download the Vulkan SDK 1.4.350.0 tarball from [https://vulkan.lunarg.com/sdk/home#linux](https://vulkan.lunarg.com/sdk/home#linux) and extract it:
+
+```bash
+# Extract to ~/VulkanSDK/ (or any path you prefer)
+tar -xf vulkansdk-linux-x86_64-1.4.350.0.tar.xz -C ~/VulkanSDK/
+```
+
+Add the following to your `~/.bashrc` (replace `~/VulkanSDK` with your extraction path):
+
+```bash
+export VULKAN_SDK=~/VulkanSDK/1.4.350.0/x86_64
+export PATH=$VULKAN_SDK/bin:$PATH
+export LD_LIBRARY_PATH=$VULKAN_SDK/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+export VK_LAYER_PATH=$VULKAN_SDK/share/vulkan/explicit_layer.d
+```
+
+Reload your shell:
+
+```bash
+source ~/.bashrc
+```
+
+Install the distro Vulkan dev package:
+
+```bash
+sudo apt install libvulkan-dev
+```
+
+Verify the SDK is visible:
+
+```bash
+vulkaninfo --summary
+```
+
+### Install devkitPro
+
+**Step 1 — Install devkitPro Pacman:**
+
+```bash
+wget https://apt.devkitpro.org/install-devkitpro-pacman
+chmod +x ./install-devkitpro-pacman
+sudo ./install-devkitpro-pacman
+```
+
+<Note>
+  If `wget` fails with a 403, download the file manually in a browser from [https://apt.devkitpro.org/install-devkitpro-pacman](https://apt.devkitpro.org/install-devkitpro-pacman) and continue from the `chmod` step.
+</Note>
+
+**Step 2 — Install Wii and 3DS toolchains:**
+
+`wii-dev` is required for GameCube too — it provides devkitPPC (`powerpc-eabi-g++`), which compiles GameCube builds even though the GameCube libraries come from `libogc2` in the next step.
+
+```bash
+sudo dkp-pacman -S wii-dev 3ds-dev
+```
+
+Restart your computer, then verify:
+
+```bash
+$DEVKITPPC/bin/powerpc-eabi-g++ --version
+$DEVKITARM/bin/arm-none-eabi-g++ --version
+```
+
+**Step 3 — Install libogc2 for GameCube builds:**
+
+Trust the libogc2 signing key:
+
+```bash
+sudo dkp-pacman-key --recv-keys C8A2759C315CFBC3429CC2E422B803BA8AA3D7CE --keyserver keyserver.ubuntu.com
+sudo dkp-pacman-key --lsign-key C8A2759C315CFBC3429CC2E422B803BA8AA3D7CE
+```
+
+Add the libogc2 repository to `/opt/devkitpro/pacman/etc/pacman.conf` **above** the existing `[dkp-libs]` entry. This is file content, not commands — both `Server` lines are mirrors and both belong in the file:
+
+```ini
+[libogc2-devkitpro]
+Server = https://packages.libogc2.org/devkitpro/linux/$arch
+Server = https://packages.extremscorner.org/devkitpro/linux/$arch
+```
+
+Sync and install:
+
+```bash
+sudo dkp-pacman -Syuu
+sudo dkp-pacman -S gamecube-tools-git libogc2 libogc2-libdvm
+```
+
+Verify the GameCube library is present:
+
+```bash
+ls /opt/devkitpro/libogc2/gamecube/lib
+```
+
+You should see `libogc.a` in the output.
+
+### Run the Prebuild Script
+
+Compile shaders, build `libgit2`, and generate the embedded-asset stubs:
+
+```bash
+bash Tools/prebuild.sh
+```
+
+This runs three steps: builds `libgit2`, compiles GLSL shaders to SPIR-V, and writes minimal stubs for `Standalone/Generated/EmbeddedAssets.{h,cpp}`, `EmbeddedScripts.{h,cpp}`, and `AddonPlugins.cpp`. The stub step only writes files that are missing. Requires `python3` on `PATH`.
+
+### Build and Run the Editor
+
+**Terminal:**
+
+```bash
+cd Standalone
+make -f Makefile_Linux_Editor
+cd ..
+Standalone/Build/Linux/PolyphaseEditor.elf
+```
+
+<Warning>
+  Always run the editor binary from the **repository root directory** so that `Engine/Assets` and `Engine/Shaders` resolve correctly.
+</Warning>
+
+**VS Code:**
+
+1. Open the repository root in VS Code.
+2. Install the **C/C++ Extension Pack**.
+3. Open the **Run and Debug** tab, select **Polyphase Editor** from the dropdown, and press the green play button.
+
+</Steps>
+
+## Troubleshooting: VSCode / GDB Slow Startup on Ubuntu 24+
+
+On Ubuntu 22.04+ / 24.04+, GDB may attempt to download external debug symbols from Ubuntu's `debuginfod` servers, causing extremely slow debugger startup or hangs. To disable this, set the following in your VS Code launch configuration:
+
+```json
+"remoteEnv": {
+    "DEBUGINFOD_URLS": ""
+}
+```
+
+Or disable it globally in your shell:
+
+```bash
+echo 'export DEBUGINFOD_URLS=""' >> ~/.bashrc
+source ~/.bashrc
+```
+
+## Packaging Linux Installers (RPM / AppImage)
+
+The RPM target requires `rpmbuild` on `PATH`:
+
+```bash
+# Debian/Ubuntu
+sudo apt install rpm
+# Arch
+sudo pacman -S rpm-tools
+```
+
+The AppImage target requires `appimagetool`. It is not in distro repos — download it:
+
+```bash
+sudo wget -O /usr/local/bin/appimagetool \
+  https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+sudo chmod +x /usr/local/bin/appimagetool
+```
+
+<Note>
+  FUSE is not required — the packager runs `appimagetool` with `APPIMAGE_EXTRACT_AND_RUN=1`.
+</Note>

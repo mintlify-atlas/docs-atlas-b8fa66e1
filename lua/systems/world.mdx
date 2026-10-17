@@ -1,0 +1,703 @@
+---
+title: "World Lua API — Scenes, Nodes & Physics in Polyphase"
+sidebarTitle: "World"
+description: "Spawn and destroy nodes, load scenes, query cameras, run raycasts, configure physics, fog, and navmesh from Lua in Polyphase Engine."
+---
+
+The `World` object is your primary handle for interacting with a live scene. You obtain it via `Engine.GetWorld(index)` and then use it to spawn nodes, load scenes, manage the camera, perform raycasts and navigation queries, configure environment settings such as fog and gravity, and check occlusion visibility. Every function below is called with colon syntax on a `World` reference (e.g. `world:SpawnNode(...)`).
+
+---
+
+## Obtaining a World
+
+```lua
+local world = Engine.GetWorld()        -- main world (index defaults to 1)
+local bottomScreen = Engine.GetWorld(2) -- 3DS bottom screen
+```
+
+<Note>
+On most platforms only world index `1` exists. The 3DS is the exception: world `1` is the top screen and world `2` is the bottom screen.
+</Note>
+
+---
+
+## Nodes
+
+### World:SpawnNode
+
+```lua
+node = World:SpawnNode(className, position)
+```
+
+Spawns a new node of the given class and attaches it to the world root. If the world has no root node yet, the new node becomes the root.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `className` | `string` | — | Name of the class to spawn |
+| `position` | `Vector` | `Vec(0,0,0)` | World-space spawn position |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `node` | `Node` | The newly created node |
+
+```lua
+local enemy = world:SpawnNode("Goblin", Vec(10, 0, 5))
+enemy:SetScale(Vec(1.5, 1.5, 1.5))
+```
+
+---
+
+### World:SpawnScene
+
+```lua
+node = World:SpawnScene(scene, position)
+```
+
+Instantiates a `Scene` asset and attaches it to the world root.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `scene` | `Scene` | — | Scene asset to spawn |
+| `position` | `Vector` | `Vec(0,0,0)` | World-space spawn position |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `node` | `Node` | Root node of the spawned scene |
+
+```lua
+local pickupScene = LoadAsset("SC_Pickup")
+local pickup = world:SpawnScene(pickupScene, Vec(0, 1, 0))
+```
+
+---
+
+### World:DespawnScene
+
+```lua
+World:DespawnScene(sceneRoot)
+```
+
+Destroys the root node of a previously spawned scene and all of its children. Uses deferred destruction — safe to call mid-frame.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `sceneRoot` | `Node` | Root node returned by `SpawnScene` |
+
+---
+
+### World:GetRootNode
+
+```lua
+root = World:GetRootNode()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `root` | `Node` | The world's current root node |
+
+---
+
+### World:SetRootNode
+
+```lua
+World:SetRootNode(root)
+```
+
+Replaces the world's root node.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `root` | `Node` | The new root node |
+
+---
+
+### World:DestroyRootNode
+
+```lua
+World:DestroyRootNode()
+```
+
+Destroys the current root node and all of its children.
+
+---
+
+### World:QueueRootNode
+
+```lua
+World:QueueRootNode(newRoot)
+```
+
+Queues a node to become the world's root at the start of the next frame. Used internally by `World:LoadScene()`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `newRoot` | `Node` | The node to set as root |
+
+---
+
+### World:FindNode
+
+```lua
+node = World:FindNode(name)
+```
+
+Searches the scene hierarchy for a node with the given name. Returns `nil` if not found.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Exact node name |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `node` | `Node` | Found node, or `nil` |
+
+```lua
+local hud = world:FindNode("HUD")
+if hud then hud:SetVisible(true) end
+```
+
+---
+
+### World:FindNodesWithName
+
+```lua
+nodes = World:FindNodesWithName(name)
+```
+
+Returns an array of all nodes whose name matches exactly.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Name to search for |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `nodes` | `table` | Array of `Node` elements |
+
+---
+
+### World:FindNodesWithTag
+
+```lua
+nodes = World:FindNodesWithTag(tag)
+```
+
+Returns an array of all nodes that carry a specific tag.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `tag` | `string` | Tag to search for |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `nodes` | `table` | Array of `Node` elements |
+
+```lua
+local enemies = world:FindNodesWithTag("Enemy")
+for _, e in ipairs(enemies) do
+    e:TakeDamage(999)
+end
+```
+
+---
+
+## Scene Loading
+
+### World:LoadScene
+
+```lua
+World:LoadScene(sceneName, instant)
+```
+
+Clears the world and loads the named scene as the new root node.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `sceneName` | `string` | — | Name of the `Scene` asset to load |
+| `instant` | `boolean` | `false` | When `false`, load happens at the start of the next frame (safer). When `true`, loads immediately. |
+
+<Warning>
+Instant loading (`instant = true`) can cause problems and should be avoided in most cases. Prefer `false` for all gameplay transitions.
+</Warning>
+
+```lua
+-- Safe non-instant scene load (routes through LoadingMenu if configured)
+world:LoadScene("SC_Level2")
+```
+
+---
+
+### World:GetLoadedSceneName
+
+```lua
+name = World:GetLoadedSceneName()
+```
+
+Returns the name of the most recently loaded top-level scene (or the queued scene if a load is pending). Returns an empty string if no scene has been loaded.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `name` | `string` | Scene name, or `""` |
+
+---
+
+### World:GetLoadedSceneNames
+
+```lua
+names = World:GetLoadedSceneNames()
+```
+
+Returns an array of names for every instantiated scene in the world, including nested/child scenes. De-duplicated — a scene instanced multiple times appears only once.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `names` | `table` | Array of scene name strings |
+
+---
+
+## Camera & Audio Receiver
+
+### World:GetActiveCamera
+
+```lua
+camera = World:GetActiveCamera()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `camera` | `Camera3D` | The currently active camera |
+
+---
+
+### World:SetActiveCamera
+
+```lua
+World:SetActiveCamera(camera)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `camera` | `Camera3D` | Camera to activate |
+
+---
+
+### World:GetAudioReceiver
+
+```lua
+receiver = World:GetAudioReceiver()
+```
+
+Returns the active audio receiver node. If none is assigned, the active camera is used instead.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `receiver` | `Node3D` | Audio receiver node |
+
+---
+
+### World:SetAudioReceiver
+
+```lua
+World:SetAudioReceiver(receiver)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `receiver` | `Node3D` | Node to use as the audio listener |
+
+---
+
+## Visibility
+
+### World:IsSeenByCamera
+
+```lua
+seen = World:IsSeenByCamera(node, camera)
+```
+
+Checks whether a node is currently inside the camera frustum and not occluded by baked occlusion data. Evaluated immediately with no one-frame lag.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `node` | `Node3D` | — | Node to test |
+| `camera` | `Camera3D` | `nil` (active camera) | Camera to test against |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `seen` | `boolean` | `true` if the camera can see the node |
+
+---
+
+### World:GetSeenByCamera
+
+```lua
+nodes = World:GetSeenByCamera(tags, camera)
+```
+
+Returns every `Node3D` the camera can currently see, optionally filtered to nodes with specific tags.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `tags` | `string\|table` | `nil` | A single tag string or an array of tags. `nil` returns all visible nodes. |
+| `camera` | `Camera3D` | `nil` (active camera) | Camera to test against |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `nodes` | `table` | Array of visible `Node3D` elements |
+
+```lua
+-- Check if a single node is on screen
+if world:IsSeenByCamera(self) then
+    self:ShowHealthBar()
+end
+
+-- Gather all visible enemies and turrets
+local threats = world:GetSeenByCamera({ "Enemy", "Turret" })
+for _, node in ipairs(threats) do
+    node:Alert()
+end
+```
+
+<Tip>
+`GetSeenByCamera` walks the entire scene. On constrained hardware (consoles) call it on events rather than every frame.
+</Tip>
+
+---
+
+## Physics & Raycasting
+
+### World:RayTest
+
+```lua
+res = World:RayTest(start, end, colMask, ignoreObjects, ignorePureOverlaps)
+```
+
+Casts a ray and returns the first `Primitive3D` node hit.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `start` | `Vector` | — | Ray start position |
+| `end` | `Vector` | — | Ray end position |
+| `colMask` | `integer` | — | Collision mask (`0xff` for all groups) |
+| `ignoreObjects` | `table` | `nil` | Array of `Primitive3D` nodes to ignore |
+| `ignorePureOverlaps` | `boolean` | `true` | Ignore primitives with overlap-only collision |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `res` | `table` | `{ start, end, hitNode, hitNormal, hitPosition, hitFraction }` or `nil` |
+
+```lua
+local camPos  = camera:GetWorldPosition()
+local forward = camera:GetForwardVector()
+local result  = world:RayTest(camPos, camPos + forward * 100, 0xff)
+if result and result.hitNode then
+    Log.Debug("Hit: " .. result.hitNode:GetName())
+end
+```
+
+---
+
+### World:RayTestMulti
+
+```lua
+res = World:RayTestMulti(start, end, colMask, ignoreObjects, ignorePureOverlaps)
+```
+
+Like `RayTest` but returns an array of all intersected primitives, not just the first.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `start` | `Vector` | — | Ray start position |
+| `end` | `Vector` | — | Ray end position |
+| `colMask` | `integer` | — | Collision mask |
+| `ignoreObjects` | `table` | `nil` | Array of nodes to ignore |
+| `ignorePureOverlaps` | `boolean` | `true` | Ignore overlap-only primitives |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `results` | `table` | Array of `{ node, normal, position, fraction }` tables |
+
+---
+
+### World:SweepTest
+
+```lua
+res = World:SweepTest(prim, start, end, colMask)
+```
+
+Performs a shape sweep using a `Primitive3D` node's collision shape, returning the first hit.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `prim` | `Primitive3D` | Node whose collision shape to sweep |
+| `start` | `Vector` | Start position |
+| `end` | `Vector` | End position |
+| `colMask` | `integer` | Collision mask |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `res` | `table` | `{ start, end, hitNode, hitNormal, hitPosition, hitFraction }` or `nil` |
+
+---
+
+### World:SetGravity
+
+```lua
+World:SetGravity(gravity)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `gravity` | `Vector` | Gravity vector (e.g. `Vec(0, -9.8, 0)`) |
+
+---
+
+### World:GetGravity
+
+```lua
+gravity = World:GetGravity()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `gravity` | `Vector` | Current gravity vector |
+
+---
+
+### World:EnableInternalEdgeSmoothing
+
+```lua
+World:EnableInternalEdgeSmoothing(enable)
+```
+
+Enables smoother collisions along collision mesh boundaries.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enable` | `boolean` | Whether to enable edge smoothing |
+
+---
+
+### World:IsInternalEdgeSmoothingEnabled
+
+```lua
+enable = World:IsInternalEdgeSmoothingEnabled()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `enable` | `boolean` | Whether edge smoothing is active |
+
+---
+
+## Navigation
+
+### World:BuildNavData
+
+```lua
+World:BuildNavData()
+```
+
+Builds navigation mesh data for the current world state. Must be called before any nav query functions will work (unless `EnableAutoNavRebuild` is on).
+
+---
+
+### World:EnableAutoNavRebuild
+
+```lua
+World:EnableAutoNavRebuild(enable)
+```
+
+When enabled, navmesh data is rebuilt automatically. Disabled by default.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enable` | `boolean` | Enable auto rebuild |
+
+---
+
+### World:FindNavPath
+
+```lua
+res = World:FindNavPath(start, goal)
+```
+
+Finds a navigation path between two world positions.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `start` | `Vector` | Start world position |
+| `goal` | `Vector` | Goal world position |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `res` | `table` | `{ success: boolean, points: table }` — `points` is an array of `Vector` waypoints |
+
+```lua
+world:BuildNavData()
+local path = world:FindNavPath(self:GetWorldPosition(), target:GetWorldPosition())
+if path.success then
+    for _, waypoint in ipairs(path.points) do
+        -- follow waypoint
+    end
+end
+```
+
+---
+
+### World:FindRandomNavPoint
+
+```lua
+point = World:FindRandomNavPoint()
+```
+
+Returns a random point on the navmesh, or `nil` if unavailable.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `point` | `Vector` | Random nav point |
+
+---
+
+### World:FindClosestNavPoint
+
+```lua
+point = World:FindClosestNavPoint(pos)
+```
+
+Projects a world position onto the nearest point on the navmesh.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `pos` | `Vector` | Input world position |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `point` | `Vector` | Closest nav point, or `nil` |
+
+---
+
+## Environment
+
+### World:SetAmbientLightColor
+
+```lua
+World:SetAmbientLightColor(ambient)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `ambient` | `Vector` | Ambient light color (RGBA) |
+
+---
+
+### World:GetAmbientLightColor
+
+```lua
+ambient = World:GetAmbientLightColor()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `ambient` | `Vector` | Current ambient light color |
+
+---
+
+### World:SetShadowColor
+
+```lua
+World:SetShadowColor(color)
+```
+
+Sets the shadow color used by both projected shadows and `ShadowMesh3D` nodes.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `color` | `Vector` | Shadow color (RGBA) |
+
+---
+
+### World:GetShadowColor
+
+```lua
+color = World:GetShadowColor()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `color` | `Vector` | Current shadow color |
+
+---
+
+### World:SetFog
+
+```lua
+World:SetFog(fogData)
+```
+
+Configures world fog. Pass a table with any subset of the fields.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `fogData` | `table` | Fog settings table |
+
+**fogData fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `enable` | `boolean` | Enable fog |
+| `color` | `Vector` | Fog color |
+| `exponential` | `boolean` | Exponential falloff; if `false`, linear |
+| `near` | `number` | Distance at which fog starts accumulating |
+| `far` | `number` | Distance at which fog is 100% dense |
+
+```lua
+world:SetFog({
+    enable      = true,
+    color       = Vec(0.6, 0.7, 0.8, 1.0),
+    exponential = false,
+    near        = 30,
+    far         = 120,
+})
+```
+
+---
+
+### World:GetFog
+
+```lua
+fogData = World:GetFog()
+```
+
+Returns the current fog settings as a table with the same fields as `SetFog`.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `fogData` | `table` | Current fog settings |
+
+---
+
+## Particles
+
+### World:SpawnParticle
+
+```lua
+particle = World:SpawnParticle(system, position, velocity)
+```
+
+Instantiates a particle system at a world position and auto-destroys it when it finishes.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `system` | `ParticleSystem` | — | Particle system asset to instantiate |
+| `position` | `Vector` | — | World-space spawn position |
+| `velocity` | `Vector` | `nil` | Optional base velocity applied to all spawned particles |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `particle` | `Particle3D` | The newly created particle node |
+
+```lua
+local boom = LoadAsset("PS_Explosion")
+world:SpawnParticle(boom, self:GetWorldPosition(), Vec(0, 2, 0))
+```

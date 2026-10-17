@@ -1,0 +1,339 @@
+---
+title: "Physics, Collision, and Navigation Meshes"
+sidebarTitle: "Physics & NavMesh"
+description: "Configure Bullet3 physics shapes and collision callbacks on 3D nodes, then bake and query navigation meshes for AI pathfinding using Recast and Detour."
+---
+
+Polyphase integrates Bullet3 for rigid-body physics and Recast/Detour for navigation mesh generation and pathfinding. Physics shapes are attached directly to scene nodes — `Box3D`, `Sphere3D`, and `Capsule3D` — while navigation is driven by `NavMesh3D` volume nodes that you place in the scene to define walkable areas. Both systems are available from C++ and Lua with the same API.
+
+## Physics
+
+### Collision Shapes
+
+Each 3D primitive node carries its own physics shape. The shape used for simulation is determined by the node type:
+
+| Node | Physics Shape | Typical Use |
+|---|---|---|
+| `Box3D` | Box (AABB-oriented) | Crates, floors, walls, level geometry |
+| `Sphere3D` | Sphere | Balls, projectiles, collectibles |
+| `Capsule3D` | Capsule | Characters, enemies, player controllers |
+
+Physics properties are exposed on `Primitive3D` (the common base of all three) and can be set in the editor or from script.
+
+### Physics Properties
+
+| Property | Description |
+|---|---|
+| **Simulate Physics** | When enabled the node participates in the Bullet3 simulation (dynamic rigid body) |
+| **Mass** | Mass in kg. Higher mass requires more force to move |
+| **Restitution** | "Bounciness" — 0 = no bounce, 1 = perfectly elastic |
+| **Friction** | Surface friction coefficient |
+| **Linear Damping** | Drag on linear velocity (reduces sliding) |
+| **Angular Damping** | Drag on angular velocity (reduces spinning) |
+| **Collision Enabled** | Whether the shape participates in collision queries at all |
+| **Overlap Events** | Fire `BeginOverlap`/`EndOverlap` instead of physically resolving the collision (trigger volumes) |
+
+### Overlap and Collision Callbacks
+
+Register callbacks on a node to respond to physics events. These are Lua script functions defined on a node's script component.
+
+#### `BeginOverlap(otherNode)`
+
+Fires when another node's shape first overlaps this node (requires **Overlap Events** enabled on at least one participant).
+
+```lua
+function MyTrigger:BeginOverlap(other)
+    if other:GetName() == "Player" then
+        Log.Debug("Player entered trigger zone")
+        self:OpenDoor()
+    end
+end
+```
+
+#### `EndOverlap(otherNode)`
+
+Fires when the other node's shape stops overlapping this node.
+
+```lua
+function MyTrigger:EndOverlap(other)
+    if other:GetName() == "Player" then
+        self:CloseDoor()
+    end
+end
+```
+
+#### `OnCollision(otherNode, hitNormal, hitPosition)`
+
+Fires when two physics-simulating nodes collide (requires **Simulate Physics** enabled on both and **Overlap Events** disabled). Use this for damage, sound effects, and gameplay responses.
+
+```lua
+function Barrel:OnCollision(other, hitNormal, hitPosition)
+    local impactSpeed = other:GetLinearVelocity():Length()
+    if impactSpeed > 5.0 then
+        self:Explode()
+    end
+end
+```
+
+<Note>
+A node fires either overlap events **or** collision events, not both — this is controlled by the **Overlap Events** toggle on the `Primitive3D` node. Trigger volumes (invisible zones) typically use overlap events; dynamic physics objects use collision events.
+</Note>
+
+---
+
+## NavMesh
+
+The NavMesh system uses the industry-standard [Recast](https://github.com/recastnavigation/recastnavigation) library for mesh generation and [Detour](https://github.com/recastnavigation/recastnavigation) for runtime pathfinding queries.
+
+### Architecture
+
+```
+NavMesh3D volume (placed in scene)
+  └── defines the bounding area for the build
+
+StaticMesh3D nodes inside the volume
+  └── contribute geometry to the build pipeline
+
+World::BuildNavigationData()
+  ├── 1. Gather triangles from StaticMesh3D nodes within bounds
+  ├── 2. Apply negator volumes (subtract walkable area)
+  ├── 3. Apply wall culling (remove near-vertical faces)
+  ├── 4. Rasterize → voxel heightfield (Recast)
+  ├── 5. Build walkable regions
+  ├── 6. Generate navigation polygon mesh
+  ├── 7. Create Detour dtNavMesh
+  └── 8. Initialize dtNavMeshQuery for runtime queries
+```
+
+### NavMesh3D Volume Node
+
+`NavMesh3D` inherits from `Box3D` and is placed in the scene editor to define the navigation area. All `StaticMesh3D` nodes that fall within its bounds are included in the next build.
+
+| Property | Default | Description |
+|---|---|---|
+| **Nav Bounds** | `true` | Include this volume's extents in the nav mesh build |
+| **Nav Overlay** | `true` | Render a wireframe debug overlay of the generated nav mesh |
+| **Nav Negator** | `false` | Subtract this volume from the walkable area (useful for doors, obstacles) |
+| **Cull Walls** | `false` | Remove near-vertical triangles from the build input |
+| **Wall Cull Threshold** | `0.2` | Dot-product threshold for wall culling (lower = more aggressive) |
+
+### Build Parameters
+
+These constants are defined in `World.cpp` and control the Recast voxelization:
+
+| Parameter | Value | Description |
+|---|---|---|
+| Cell Size | 0.3 | XZ voxel resolution — smaller gives more detail but slower builds |
+| Cell Height | 0.2 | Y voxel resolution |
+| Walkable Slope | 55° | Maximum slope angle considered walkable |
+| Walkable Height | 2.0 | Minimum ceiling clearance for the agent |
+| Walkable Climb | 0.9 | Maximum step height the agent can climb |
+| Walkable Radius | 0.4 | Agent collision radius (erodes nav mesh edges inward) |
+| Query Extents | 2.0, 4.0, 2.0 | Search radius for nearest-polygon lookups |
+
+### Baking the NavMesh
+
+<Warning>
+`BuildNavigationData()` / `BuildNavData()` is a **synchronous** operation. Call it during scene loading or level setup — not during gameplay — to avoid frame stalls on large scenes.
+</Warning>
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    World* world = myNode3D->GetWorld();
+
+    // Build synchronously (during load)
+    world->BuildNavigationData();
+
+    // Enable automatic rebuilds when geometry changes
+    world->EnableAutoNavRebuild(true);
+
+    // Mark dirty — triggers a rebuild if auto-rebuild is on
+    world->InvalidateNavMesh();
+
+    bool autoRebuild = world->IsAutoNavRebuildEnabled();
+    ```
+  </Tab>
+  <Tab title="Lua">
+    ```lua
+    local world = self:GetWorld()
+
+    -- Build synchronously (call during Start or level setup)
+    world:BuildNavData()
+
+    -- Enable automatic rebuilds for dynamic environments
+    world:EnableAutoNavRebuild(true)
+
+    -- Mark dirty (triggers rebuild if auto-rebuild is enabled)
+    world:InvalidateNavMesh()
+    ```
+  </Tab>
+</Tabs>
+
+### Pathfinding Queries
+
+All pathfinding methods are on the `World` object.
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    World* world = myNode3D->GetWorld();
+
+    // A* pathfinding — returns ordered list of waypoints
+    std::vector<glm::vec3> path;
+    if (world->FindNavPath(enemyPos, playerPos, path))
+    {
+        for (const auto& waypoint : path)
+        {
+            // move toward each waypoint in sequence
+        }
+    }
+
+    // Random walkable point (patrol destinations, spawning)
+    glm::vec3 patrolTarget;
+    if (world->FindRandomNavPoint(patrolTarget))
+    {
+        enemy->MoveTo(patrolTarget);
+    }
+
+    // Snap an arbitrary position to the nearest walkable surface
+    glm::vec3 spawnPos(10.0f, 5.0f, 10.0f);
+    glm::vec3 navPos;
+    if (world->FindClosestNavPoint(spawnPos, navPos))
+    {
+        enemy->SetPosition(navPos);
+    }
+    ```
+  </Tab>
+  <Tab title="Lua">
+    ```lua
+    local world = self:GetWorld()
+
+    -- FindNavPath returns (table of Vec3, bool)
+    local start = self:GetWorldPosition()
+    local goal  = targetNode:GetWorldPosition()
+    local path, found = world:FindNavPath(start, goal)
+
+    if found then
+        for i, waypoint in ipairs(path) do
+            print("Waypoint " .. i .. ": " .. tostring(waypoint))
+        end
+    end
+
+    -- Random walkable point
+    local target, found = world:FindRandomNavPoint()
+    if found then
+        self:SetWorldPosition(target)
+    end
+
+    -- Nearest point on the nav mesh
+    local navPos, found = world:FindClosestNavPoint(Vec3.New(10, 5, 10))
+    if found then
+        enemy:SetWorldPosition(navPos)
+    end
+    ```
+  </Tab>
+</Tabs>
+
+### NavMesh3D from Lua
+
+Since `NavMesh3D` inherits from `Box3D`, you can find and resize volumes at runtime:
+
+```lua
+local navVolume = world:FindNode("NavMeshVolume")
+navVolume:SetWorldPosition(Vec3.New(0, 0, 0))
+navVolume:SetWorldScale(Vec3.New(50, 10, 50))
+
+-- Adjust extents (Box3D API)
+navVolume:SetExtents(Vec3.New(100, 20, 100))
+```
+
+### Examples
+
+<Accordion title="Basic AI Pathfinding — follow the player">
+  ```lua
+  function Enemy:Start()
+      local world = self:GetWorld()
+      world:BuildNavData()
+      self.pathIndex = 1
+      self.path = {}
+      self.speed = 5.0
+      self.repathTimer = 0
+  end
+
+  function Enemy:Tick(deltaTime)
+      local world  = self:GetWorld()
+      local myPos  = self:GetWorldPosition()
+      local player = world:FindNode("Player")
+      if player == nil then return end
+
+      -- Repath once per second
+      self.repathTimer = self.repathTimer + deltaTime
+      if self.repathTimer > 1.0 then
+          self.repathTimer = 0
+          self.path, self.pathFound = world:FindNavPath(myPos, player:GetWorldPosition())
+          self.pathIndex = 1
+      end
+
+      -- Follow the path
+      if self.pathFound and self.pathIndex <= #self.path then
+          local target = self.path[self.pathIndex]
+          local dir    = target - myPos
+          dir.y = 0
+          local dist = dir:Length()
+          if dist < 0.5 then
+              self.pathIndex = self.pathIndex + 1
+          else
+              local newPos = myPos + dir:GetNormalized() * self.speed * deltaTime
+              self:SetWorldPosition(newPos)
+          end
+      end
+  end
+  ```
+</Accordion>
+
+<Accordion title="Dynamic obstacles with auto-rebuild">
+  ```lua
+  function Level:Start()
+      local world = self:GetWorld()
+      world:BuildNavData()
+      world:EnableAutoNavRebuild(true)
+  end
+
+  -- Call this whenever a physics-relevant object moves
+  function Level:OnObstacleMoved()
+      self:GetWorld():InvalidateNavMesh()
+      -- Nav mesh rebuilds automatically because auto-rebuild is enabled
+  end
+  ```
+</Accordion>
+
+<Accordion title="Door blocker using a NavMesh3D negator volume">
+  Place two `NavMesh3D` nodes in the scene:
+  - **`NavBounds`** — large volume covering the entire level (`Nav Bounds = true`)
+  - **`DoorBlocker`** — small volume over the doorway (`Nav Negator = true`)
+
+  ```lua
+  function Door:Start()
+      local world = self:GetWorld()
+      world:BuildNavData()
+      world:EnableAutoNavRebuild(true)
+      -- Save the blocker's original position
+      local blocker = world:FindNode("DoorBlocker")
+      self.blockerOrigin = blocker:GetWorldPosition()
+  end
+
+  function Door:Open()
+      -- Move the negator out of the way and rebuild
+      local blocker = self:GetWorld():FindNode("DoorBlocker")
+      blocker:SetWorldPosition(Vec3.New(0, -100, 0))
+      self:GetWorld():InvalidateNavMesh()
+  end
+
+  function Door:Close()
+      local blocker = self:GetWorld():FindNode("DoorBlocker")
+      blocker:SetWorldPosition(self.blockerOrigin)
+      self:GetWorld():InvalidateNavMesh()
+  end
+  ```
+</Accordion>

@@ -1,0 +1,780 @@
+---
+title: "Light, Camera, Audio & Particle Nodes Lua API"
+sidebarTitle: "Light & Camera Nodes"
+description: "Lua API for Polyphase light nodes (Point, Directional, Spot), Camera3D (projection, FOV, screen-to-world), Audio3D, and Particle3D."
+---
+
+This page covers four categories of 3D scene nodes: lights, cameras, audio sources, and particle systems. All inherit from [`Node3D`](/lua/nodes/node3d) and [`Node`](/lua/nodes/node).
+
+---
+
+## Light3D (base class)
+
+`Light3D` is the base class for all three light types. It provides color, intensity, shadow, and lighting channel controls.
+
+### `Light3D:SetColor(color)`
+
+Set the light color.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `color` | `Vector` | RGB color vector. |
+
+---
+
+### `Light3D:GetColor()`
+
+**Returns:** `Vector` — light color.
+
+---
+
+### `Light3D:SetIntensity(intensity)`
+
+Set the light intensity.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `intensity` | `number` | Intensity value. |
+
+---
+
+### `Light3D:GetIntensity()`
+
+**Returns:** `number` — light intensity.
+
+---
+
+### `Light3D:SetCastShadows(castShadows)`
+
+Enable shadow casting for this light.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `castShadows` | `boolean` | Whether to cast shadows. |
+
+<Note>Shadow casting is currently only supported on Vulkan platforms and has not been fully implemented.</Note>
+
+---
+
+### `Light3D:ShouldCastShadows()`
+
+**Returns:** `boolean` — `true` if shadow casting is enabled.
+
+---
+
+### `Light3D:GetDomain()`
+
+Get the lighting domain (static/baked = `0`, dynamic = `1`, all = `2`).
+
+**Returns:** `integer` — lighting domain.
+
+---
+
+### `Light3D:GetLightingChannels()`
+
+Get the lighting channels bitmask. Only primitives on the same channels are lit by this light. `0xff` = all channels.
+
+**Returns:** `integer` — channel bitmask.
+
+---
+
+### `Light3D:SetLightingChannels(channels)`
+
+Set the lighting channels bitmask.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `channels` | `integer` | Channel bitmask (e.g. `0xff` for all). |
+
+---
+
+## PointLight3D
+
+A point light that emits from a single location. Intensity attenuates with distance.
+
+Inherits: `Light3D` → `Node3D` → `Node`
+
+### `PointLight3D:SetRadius(radius)`
+
+Set the light radius. Intensity drops to zero beyond this distance.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `radius` | `number` | Light radius in world units. |
+
+---
+
+### `PointLight3D:GetRadius()`
+
+**Returns:** `number` — light radius.
+
+```lua
+local light = self:FindChild("Torch")
+light:SetColor(Vec(1.0, 0.6, 0.2))
+light:SetIntensity(3.0)
+light:SetRadius(8.0)
+```
+
+---
+
+## DirectionalLight3D
+
+A directional light that simulates a distant source like the sun, casting parallel rays.
+
+Inherits: `Light3D` → `Node3D` → `Node`
+
+### `DirectionalLight3D:GetDirection()`
+
+Get the direction the light is emitting toward. Derived from the node's rotation.
+
+**Returns:** `Vector` — light direction vector.
+
+---
+
+### `DirectionalLight3D:SetDirection(direction)`
+
+Set the light direction. This internally adjusts the node's rotation.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `direction` | `Vector` | Desired light direction. |
+
+```lua
+local sun = self:FindChild("Sun")
+sun:SetDirection(Vec(0.5, -1.0, 0.5):Normalize())
+sun:SetIntensity(1.5)
+```
+
+---
+
+## SpotLight3D
+
+A spot light that emits a cone of light along the node's forward direction. Inherits from `PointLight3D` and `Light3D`.
+
+### `SpotLight3D:SetInnerAngle(angle)`
+
+Set the inner cone half-angle in degrees. Light is at full intensity inside this cone.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `angle` | `number` | Inner half-angle in degrees. |
+
+---
+
+### `SpotLight3D:GetInnerAngle()`
+
+**Returns:** `number` — inner half-angle in degrees.
+
+---
+
+### `SpotLight3D:SetOuterAngle(angle)`
+
+Set the outer cone half-angle. Light fades to zero beyond this angle.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `angle` | `number` | Outer half-angle in degrees. |
+
+---
+
+### `SpotLight3D:GetOuterAngle()`
+
+**Returns:** `number` — outer half-angle in degrees.
+
+---
+
+### `SpotLight3D:GetDirection()`
+
+Get the direction the spot light is aimed (the node's forward vector).
+
+**Returns:** `Vector` — light direction.
+
+---
+
+### `SpotLight3D:SetDirection(direction)`
+
+Set the direction the spot light aims.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `direction` | `Vector` | Aim direction. |
+
+```lua
+local spot = self:FindChild("Flashlight")
+spot:SetInnerAngle(15)
+spot:SetOuterAngle(30)
+spot:SetRadius(20)
+spot:SetIntensity(5.0)
+```
+
+---
+
+## Camera3D
+
+`Camera3D` defines a camera viewpoint. Switch the active camera with `World:SetActiveCamera()`.
+
+Inherits: `Node3D` → `Node`
+
+### `Camera3D:EnablePerspective(perspective)`
+
+Switch between perspective and orthographic projection.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `perspective` | `boolean` | `true` for perspective, `false` for orthographic. |
+
+---
+
+### `Camera3D:IsPerspectiveEnabled()`
+
+**Returns:** `boolean` — `true` if using perspective projection.
+
+---
+
+### `Camera3D:IsOrtho()`
+
+**Returns:** `boolean` — `true` if using orthographic projection.
+
+---
+
+### `Camera3D:GetNear()`
+
+Get the near clip plane distance.
+
+**Returns:** `number` — near plane distance.
+
+---
+
+### `Camera3D:SetNear(near)`
+
+Set the near clip plane distance. Lowering this may cause z-fighting.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `near` | `number` | Near plane distance. |
+
+---
+
+### `Camera3D:GetFar()`
+
+Get the far clip plane distance.
+
+**Returns:** `number` — far plane distance.
+
+---
+
+### `Camera3D:SetFar(far)`
+
+Set the far clip plane. Objects beyond this plane are not rendered.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `far` | `number` | Far plane distance. |
+
+---
+
+### `Camera3D:GetFieldOfView()`
+
+Get the vertical field of view in degrees (perspective mode only).
+
+**Returns:** `number` — vertical FOV in degrees.
+
+---
+
+### `Camera3D:SetFieldOfView(fovY)`
+
+Set the vertical field of view in degrees.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `fovY` | `number` | Vertical FOV in degrees. |
+
+```lua
+-- Zoom in with a narrower FOV
+self.camera:SetFieldOfView(30)
+```
+
+---
+
+### `Camera3D:GetAspectRatio()`
+
+Get the viewport aspect ratio (width / height).
+
+**Returns:** `number` — aspect ratio.
+
+---
+
+### `Camera3D:GetOrthoWidth()`
+
+Get the orthographic half-width (world units from center to horizontal edge).
+
+**Returns:** `number` — ortho half-width.
+
+---
+
+### `Camera3D:SetOrthoWidth(orthoWidth)`
+
+Set the orthographic half-width. OrthoHeight is set automatically from the aspect ratio.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `orthoWidth` | `number` | Ortho half-width in world units. |
+
+---
+
+### `Camera3D:GetOrthoHeight()`
+
+Get the orthographic half-height. Read-only; derived from `OrthoWidth` and aspect ratio.
+
+**Returns:** `number` — ortho half-height.
+
+---
+
+### `Camera3D:WorldToScreenPosition(worldPos)`
+
+Convert a world-space position to screen-space pixels. The `.z` component is positive if the position is in front of the camera.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `worldPos` | `Vector` | World-space position. |
+
+**Returns:** `Vector` — screen position (`.x`, `.y` in pixels; `.z` sign indicates front/behind).
+
+```lua
+local screenPos = self.camera:WorldToScreenPosition(enemy:GetWorldPosition())
+if screenPos.z > 0 then
+    self.indicator:SetPosition(screenPos.x, screenPos.y)
+end
+```
+
+---
+
+### `Camera3D:ScreenToWorldPosition(x, y)`
+
+Convert a screen-space position to the corresponding world-space position on the near plane.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `x` | `number` | X screen coordinate in pixels. |
+| `y` | `number` | Y screen coordinate in pixels. |
+
+**Returns:** `Vector` — world-space position on the near plane.
+
+---
+
+### `Camera3D:TraceScreenToWorld(x, y, colMask)`
+
+Perform a ray trace from the screen position into the world and return the first hit position.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `x` | `number` | X screen coordinate in pixels. |
+| `y` | `number` | Y screen coordinate in pixels. |
+| `colMask` | `integer` | Collision mask. `0xff` = trace against everything. |
+
+**Returns:** `Vector` — world-space hit position.
+
+```lua
+-- Place object where the player clicked
+local hit = self.camera:TraceScreenToWorld(mouseX, mouseY, 0xff)
+self.marker:SetWorldPosition(hit)
+```
+
+---
+
+## Audio3D
+
+`Audio3D` plays positional audio in 3D space with configurable inner/outer radii and attenuation curves.
+
+Inherits: `Node3D` → `Node`
+
+### `Audio3D:SetSoundWave(soundWave)`
+
+Assign a `SoundWave` asset.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `soundWave` | `SoundWave` | Wave asset to assign. |
+
+---
+
+### `Audio3D:GetSoundWave()`
+
+**Returns:** `SoundWave` — currently assigned wave.
+
+---
+
+### `Audio3D:SetInnerRadius(radius)` / `Audio3D:GetInnerRadius()`
+
+The inner radius is the distance at which sound is loudest. Moving closer than this does not increase volume.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `radius` | `number` | Inner radius in world units. |
+
+---
+
+### `Audio3D:SetOuterRadius(radius)` / `Audio3D:GetOuterRadius()`
+
+The outer radius is the maximum audible distance. Volume fades from inner to outer radius.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `radius` | `number` | Outer radius in world units. |
+
+---
+
+### `Audio3D:SetVolume(volume)` / `Audio3D:GetVolume()`
+
+Volume multiplier for this node.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `volume` | `number` | Volume multiplier. |
+
+---
+
+### `Audio3D:SetPitch(pitch)` / `Audio3D:GetPitch()`
+
+Pitch multiplier.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `pitch` | `number` | Pitch multiplier. |
+
+---
+
+### `Audio3D:SetLoop(loop)` / `Audio3D:GetLoop()`
+
+Set whether the wave loops.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `loop` | `boolean` | Loop flag. |
+
+---
+
+### `Audio3D:SetAutoPlay(autoPlay)` / `Audio3D:GetAutoPlay()`
+
+Set whether the sound plays automatically when the node starts.
+
+---
+
+### `Audio3D:SetPriority(priority)` / `Audio3D:GetPriority()`
+
+Sound priority. When the concurrent sound limit is reached, lower-priority sounds are stopped.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `priority` | `integer` | Priority (default `0`; can be negative). |
+
+---
+
+### `Audio3D:SetStartOffset(offset)` / `Audio3D:GetStartOffset()`
+
+Start time offset in seconds when the audio begins playing.
+
+---
+
+### `Audio3D:SetAttenuationFunc(attenFunc)` / `Audio3D:GetAttenuationFunc()`
+
+Set the volume falloff curve. See `AttenuationFunc` enum: `Constant` or `Linear`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `attenFunc` | `integer` | `AttenuationFunc` enum value. |
+
+---
+
+### `Audio3D:PlayAudio()` / `Audio3D:Play()`
+
+Start or resume playback of the assigned wave. If called with arguments `(soundWave, loop)`, assigns the wave and loop flag before playing.
+
+---
+
+### `Audio3D:PauseAudio()` / `Audio3D:Pause()`
+
+Pause playback. `PlayAudio()` resumes from where it left off.
+
+---
+
+### `Audio3D:StopAudio()` / `Audio3D:Stop()`
+
+Stop playback and reset position to the beginning.
+
+---
+
+### `Audio3D:ResetAudio()`
+
+Reset the play position to the beginning without stopping or starting.
+
+---
+
+### `Audio3D:IsPlaying()`
+
+**Returns:** `boolean` — `true` if currently playing.
+
+---
+
+### `Audio3D:IsAudible()`
+
+Check if the audio receiver is within the outer radius.
+
+**Returns:** `boolean` — `true` if audible.
+
+---
+
+### `Audio3D:GetPlayTime()`
+
+**Returns:** `number` — elapsed play time in seconds.
+
+---
+
+### `Audio3D:GetDuration()`
+
+**Returns:** `number` — duration of the assigned wave in seconds (0 if none assigned).
+
+---
+
+### `Audio3D:GetPlayTimeNormalized()`
+
+Current play position as a 0–1 fraction of the wave's duration.
+
+**Returns:** `number` — normalized position in `[0, 1]`.
+
+---
+
+### `Audio3D:Seek(seconds)`
+
+Move playback to an absolute time in seconds.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `seconds` | `number` | Target time in seconds. |
+
+---
+
+### `Audio3D:SeekNormalized(t)`
+
+Move playback to a 0–1 fraction of the wave's duration.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `t` | `number` | Normalized position in `[0, 1]`. |
+
+---
+
+### `Audio3D:PlayOneShot(soundWave, volume, pitch, priority)`
+
+Play a transient one-shot voice at this node's position without affecting the node's main playback state.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `soundWave` | `SoundWave` | Wave to play. |
+| `volume` | `number` | Volume override (negative = inherit node volume). |
+| `pitch` | `number` | Pitch override (negative = inherit node pitch). |
+| `priority` | `integer` | Sound priority. |
+
+```lua
+function Enemy:OnFootstep()
+    self.audio:PlayOneShot(LoadAsset("Sounds/SW_Footstep"), 1.0, 1.0, 0)
+end
+```
+
+---
+
+### Audio Analysis
+
+These helpers support real-time visualizers. They return `0` when the node is not audible.
+
+| Method | Description | Return |
+|--------|-------------|--------|
+| `GetRMS()` | Root-mean-square amplitude | `number` in `[0,1]` |
+| `GetLoudness()` | Perceptual loudness | `number` in `[0,1]` |
+| `GetLoudnessDb()` | Raw dBFS loudness | `number` in `[-60,0]` |
+| `GetFrequencies(startHz, endHz)` | Average FFT magnitude in a band | `number` |
+| `GetSpectrum(startHz, endHz, numBins)` | FFT magnitudes across bins | `table` of `number` |
+
+---
+
+## Particle3D
+
+`Particle3D` simulates and renders a particle system defined by a `ParticleSystem` asset.
+
+Inherits: `Primitive3D` → `Node3D` → `Node`
+
+### `Particle3D:Reset()`
+
+Reset the particle system: destroy all live particles and reset elapsed time and loop count.
+
+---
+
+### `Particle3D:EnableEmission(emit)`
+
+Enable or disable spawning of new particles. Disabling also resets loop count and elapsed time.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `emit` | `boolean` | Whether to emit. |
+
+---
+
+### `Particle3D:IsEmissionEnabled()`
+
+**Returns:** `boolean` — `true` if emitting.
+
+---
+
+### `Particle3D:EnableSimulation(simulate)`
+
+Enable or disable particle simulation. Disabling freezes all particles in place.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `simulate` | `boolean` | Whether to simulate. |
+
+---
+
+### `Particle3D:IsSimulationEnabled()`
+
+**Returns:** `boolean` — `true` if simulating.
+
+---
+
+### `Particle3D:EnableAutoEmit(autoEmit)`
+
+Set whether emission starts automatically on `Start()`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `autoEmit` | `boolean` | Auto-emit flag. |
+
+---
+
+### `Particle3D:IsAutoEmitEnabled()`
+
+**Returns:** `boolean` — `true` if auto-emit is enabled.
+
+---
+
+### `Particle3D:GetElapsedTime()`
+
+Get elapsed time since emission began.
+
+**Returns:** `number` — elapsed time in seconds.
+
+---
+
+### `Particle3D:SetParticleSystem(system)`
+
+Assign the `ParticleSystem` asset template.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `system` | `ParticleSystem` | Asset to use. |
+
+---
+
+### `Particle3D:GetParticleSystem()`
+
+**Returns:** `ParticleSystem` — the assigned asset.
+
+---
+
+### `Particle3D:SetMaterialOverride(material)`
+
+Override the particle material for this node.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `material` | `Material` | Override material. |
+
+---
+
+### `Particle3D:GetMaterial()`
+
+**Returns:** `Material` — resolved material.
+
+---
+
+### `Particle3D:GetMaterialOverride()`
+
+**Returns:** `Material` — override material, or `nil`.
+
+---
+
+### `Particle3D:SetTimeMultiplier(mult)` / `Particle3D:GetTimeMultiplier()`
+
+Speed up or slow down the simulation.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `mult` | `number` | Time multiplier. |
+
+---
+
+### `Particle3D:SetUseLocalSpace(localSpace)` / `Particle3D:GetUseLocalSpace()`
+
+If `true`, particles are updated in local space and move with the node.
+
+---
+
+### `Particle3D:GetNumParticles()`
+
+**Returns:** `number` — current number of live particles.
+
+---
+
+### `Particle3D:GetParticleData(index)`
+
+Get data for a specific particle.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `integer` | Particle index. |
+
+**Returns:** `table` with fields: `position`, `velocity`, `size` (all `Vector`), `elapsedTime`, `lifeTime`, `rotationSpeed`, `rotation` (all `number`).
+
+---
+
+### `Particle3D:SetParticleData(index, data)`
+
+Set data for a particle, or all particles if `index = 0`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `integer` | Particle index, or `0` for all. |
+| `data` | `table` | Partial table of particle fields to update. |
+
+```lua
+-- Set all particles' velocity upward
+self.sparks:SetParticleData(0, { velocity = Vec(0, 5, 0) })
+```
+
+---
+
+### `Particle3D:SetParticleOrientation(orientation)` / `Particle3D:GetParticleOrientation()`
+
+Set the orientation mode for all particles. See `ParticleOrientation` enum.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `orientation` | `integer` | `ParticleOrientation` enum value. |
+
+---
+
+### `Particle3D:EnableAutoDestroy(autoDestroy)`
+
+Enable automatic self-destruction after the system's duration completes.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `autoDestroy` | `boolean` | Auto-destroy flag. |
+
+---
+
+### `Particle3D:InstantiateParticleSystem()`
+
+Create an instance copy of the current particle system asset. Useful for per-node customization without affecting the shared asset.
+
+**Returns:** `ParticleSystemInstance` — new instance.

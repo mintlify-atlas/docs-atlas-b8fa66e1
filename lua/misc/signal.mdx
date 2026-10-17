@@ -1,0 +1,163 @@
+---
+title: "Signal — Standalone Lua Event Objects in Polyphase Engine"
+sidebarTitle: "Signal"
+description: "Polyphase Signal Lua API: Signal.Create, Signal:Emit, Signal:Connect, Signal:Disconnect — and when to use Signal objects vs node signals vs SignalBus."
+---
+
+A `Signal` is a standalone Lua-side event object. Call `:Emit(...)` to broadcast it, and `:Connect(listener, func)` to subscribe. Use `Signal` when you want an event channel that **is not tied to a specific node's built-in signal table** — for example, a script-defined event stored as a field on a controller table.
+
+---
+
+## Choosing the right signal system
+
+Polyphase has **three separate signal systems** that do not interoperate. Connecting to one and emitting on another silently does nothing.
+
+| System | Emit | Listen | Lives on | Use when |
+|--------|------|--------|----------|----------|
+| **Node signals** | `node:EmitSignal("name", ...)` | `node:ConnectSignal("name", self, fn)` | A specific `Node` | The emitter is a node; clean up is automatic when the node is destroyed. **Default choice.** |
+| **Signal objects** *(this page)* | `mySignal:Emit(...)` | `mySignal:Connect(self, fn)` | A Lua table (e.g. `self.onFoo`) | The emitter is not a node, or you want an event stored as a plain Lua field. |
+| **SignalBus** | `SignalBus.Emit("name", ...)` | `SignalBus.Subscribe("name", self, fn)` | Process-global, string-keyed | Cross-scene or cross-world communication; emitter doesn't know the listeners. |
+
+### Quick decision tree
+
+- Publishing from a **Node** that other nodes will react to → **Node signal** (`EmitSignal` / `ConnectSignal`).
+- Publishing from a **non-node** object, or storing the event as a Lua field → **`Signal:Create()`** (this page).
+- Broadcasting across scene or world boundaries → **`SignalBus`**.
+
+When in doubt, **node signals** are the safest default — `Button.Activated`, `Audio3D.OnFinished`, `Slider.ValueChanged` all use them.
+
+---
+
+## Common mistake — mismatched systems
+
+```lua
+-- AudioPlaylist.lua (emitter) — creates a Lua Signal object
+function AudioPlaylist:Create()
+    self.OnNextSong = Signal.Create()
+end
+function AudioPlaylist:Next()
+    self.OnNextSong:Emit(self.currentIndex)  -- emits on the Signal object
+end
+
+-- AudioButtonBar.lua (listener) — BROKEN: listens on the node's signal table instead
+self.audioPlaylist:ConnectSignal("OnNextSong", self, function(self, idx)
+    -- This callback never fires — ConnectSignal is the NODE signal system
+end)
+```
+
+**Fix A — use node signals on both ends:**
+```lua
+-- emitter
+self:EmitSignal("OnNextSong", self:GetSongName())
+
+-- listener
+self.audioPlaylist:ConnectSignal("OnNextSong", self, function(self, songName)
+    self.title:SetText(songName)
+end)
+```
+
+**Fix B — use the Signal object on both ends:**
+```lua
+-- emitter (same as before)
+self.OnNextSong:Emit(self.currentIndex)
+
+-- listener — go through the Signal object
+self.audioPlaylist.OnNextSong:Connect(self, function(self, idx)
+    self.title:SetText(self.audioPlaylist:GetSongName())
+end)
+```
+
+---
+
+## API Reference
+
+### `Signal.Create()`
+
+Create a new standalone signal object.
+
+**Returns:** `Signal` — newly created signal.
+
+```lua
+function AudioPlaylist:Create()
+    self.OnNextSong = Signal.Create()
+end
+```
+
+---
+
+### `Signal:Emit(args...)`
+
+Fire the signal. Every connected listener function is called as `func(listener, args...)`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `args...` | `any` | Arguments passed to all listener callbacks. |
+
+```lua
+self.OnNextSong:Emit(self.currentIndex, self.currentTitle)
+```
+
+---
+
+### `Signal:Connect(listener, func)`
+
+Subscribe a listener to this signal. When the signal is emitted, `func` is invoked as `func(listener, args...)`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `listener` | `Node` | The node that will react to the signal. |
+| `func` | `function` | Member function on the listener to invoke. |
+
+```lua
+function HealthBar:OnHealthChanged(newHp)
+    self.bar:SetXRatio(newHp / self.maxHp)
+end
+
+function HealthBar:Start()
+    GetPlayer().healthSignal:Connect(self, HealthBar.OnHealthChanged)
+end
+```
+
+---
+
+### `Signal:Disconnect(listener)`
+
+Unsubscribe a listener from this signal.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `listener` | `Node` | The node to disconnect. |
+
+```lua
+function HealthBar:OnDestroy()
+    GetPlayer().healthSignal:Disconnect(self)
+end
+```
+
+---
+
+## Full usage example
+
+```lua
+-- PlaylistController.lua
+function PlaylistController:Create()
+    self.songs   = {}
+    self.current = 1
+    self.OnTrackChanged = Signal.Create()   -- Script-owned signal
+end
+
+function PlaylistController:Next()
+    self.current = (self.current % #self.songs) + 1
+    self.OnTrackChanged:Emit(self.songs[self.current])
+end
+
+-- NowPlayingWidget.lua
+function NowPlayingWidget:Start()
+    local playlist = self:FindDescendant("PlaylistController")
+    playlist.OnTrackChanged:Connect(self, NowPlayingWidget.OnTrackChanged)
+end
+
+function NowPlayingWidget:OnTrackChanged(trackName)
+    self.label:SetText(trackName)
+end
+```

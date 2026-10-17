@@ -1,0 +1,153 @@
+---
+title: "Scenes and Nodes in Polyphase Engine"
+sidebarTitle: "Scenes & Nodes"
+description: "Understand the Polyphase scene system, node hierarchy, all built-in node types, and how to create and manage nodes in the editor and at runtime."
+---
+
+Every Polyphase game is built from scenes and nodes. A **Scene** is a saved asset (`.oct` file) that holds a hierarchy of nodes. A **Node** is the fundamental building block — it can represent geometry, audio, lights, physics colliders, UI elements, or pure logic. Understanding how scenes nest and how nodes are created, parented, and scripted is essential before building anything substantial.
+
+## The Scene Asset
+
+A Scene asset stores a tree of nodes along with all their serialized property values. When a scene is loaded, its root node is instantiated into the world and all child nodes are reconstructed beneath it.
+
+Every project starts with a root scene called **`SC_Default`**. This scene is the entry point: it is the first scene loaded when the game starts. Rather than building everything inside `SC_Default` directly, you create additional scenes and add them as child nodes inside `SC_Default`. This lets you compose large worlds from reusable, independently-editable scenes.
+
+### Adding Scenes as Children
+
+To compose scenes:
+
+1. Open `SC_Default` in the editor.
+2. In the **Scene Hierarchy**, right-click and choose **Add New**.
+3. Select your other scene asset (e.g. `MyScene`).
+4. Save `SC_Default` with **Ctrl+S**.
+
+At runtime, the child scene's root node is instantiated as a child of `SC_Default`'s root node, giving you a nested hierarchy. Each child scene is an independently editable asset — changes made inside `MyScene.oct` propagate to every place it is referenced.
+
+<Note>
+A scene that is instantiated as a child of another scene is called a **scene-linked** node. Modifications to the child scene's internal structure are only made by opening that scene directly, not through the parent scene.
+</Note>
+
+---
+
+## Node Hierarchy
+
+Nodes form a parent–child tree. A parent node propagates activation, visibility, and transform (for 3D nodes) to its children. Destroying a parent destroys all its children unless a child has been marked **persistent**.
+
+Important hierarchy rules:
+
+- A node's name must be **unique among its siblings**.
+- Any node can hold any other node as a child — there is no strict type restriction at the hierarchy level.
+- A **persistent** node survives world clears and scene swaps; all other nodes are destroyed when the world root changes.
+
+---
+
+## Node Lifecycle
+
+The engine calls these virtual functions on every node as it moves through its lifecycle. Lua scripts attach to these same events via the [scripting callbacks](/guides/scripting).
+
+| Lifecycle event | When it fires |
+|---|---|
+| `Create()` | Immediately after construction, before property serialization |
+| `Awake()` | After properties have been deserialized |
+| `Start()` | On the first frame the node ticks |
+| `Tick(deltaTime)` | Every gameplay frame |
+| `EditorTick(deltaTime)` | Every frame while in the editor (not playing) |
+| `Stop()` | When the node is destroyed |
+
+---
+
+## Built-in Node Types
+
+Polyphase provides a large library of built-in node types organized into 3D, 2D, lighting, UI, and utility categories.
+
+<CardGroup cols={2}>
+  <Card title="Node3D" icon="cube">
+    The base 3D node. Holds a position, rotation, and scale in world space but renders nothing on its own. Use it as a transform anchor, an empty parent, or a script host.
+  </Card>
+  <Card title="StaticMesh3D" icon="box">
+    Renders a static mesh asset. The most common visible object in a 3D scene. Supports material overrides and LODs.
+  </Card>
+  <Card title="SkeletalMesh3D" icon="person-running">
+    Renders a mesh driven by a skeleton. Supports skeletal animation playback, blend trees, bone sockets, and bone masks.
+  </Card>
+  <Card title="Camera3D" icon="camera">
+    Defines the viewpoint from which the scene is rendered. Every scene should contain at least one active `Camera3D`; without one the screen will not be fully painted.
+  </Card>
+  <Card title="Particle3D" icon="sparkles">
+    Plays a particle system effect at a given world position. Supports looping, one-shot, and burst emission modes.
+  </Card>
+  <Card title="Audio3D" icon="volume-high">
+    Plays a `SoundWave` asset in 3D space with attenuation. Can be set to loop, auto-play on start, or triggered from script.
+  </Card>
+  <Card title="NavMesh3D" icon="map">
+    Bakes a navigation mesh into the scene for AI pathfinding. Query paths from Lua using the NavMesh API.
+  </Card>
+  <Card title="Spline3D" icon="bezier-curve">
+    Defines a piecewise-cubic spline path through 3D space. Useful for camera rails, patrol routes, and procedural placement.
+  </Card>
+  <Card title="Terrain3D" icon="mountain">
+    A heightmap-based terrain node with multi-layer material painting and built-in physics collision.
+  </Card>
+  <Card title="Voxel3D" icon="cubes">
+    A destructible voxel volume. Supports runtime editing and physics-based destruction.
+  </Card>
+  <Card title="TileMap2D" icon="table-cells">
+    A 2D tile grid node. Draws tiles from a sprite atlas and supports physics collision per tile.
+  </Card>
+  <Card title="Primitive3D (Box3D, Sphere3D, Capsule3D)" icon="shapes">
+    Physics collision shapes used for triggers and rigid-body colliders. Fire `BeginOverlap`, `EndOverlap`, and `OnCollision` script callbacks.
+  </Card>
+</CardGroup>
+
+### Lighting Nodes
+
+| Node | Description |
+|---|---|
+| `DirectionalLight3D` | A sun-like infinite directional light that casts shadows. |
+| `PointLight3D` | Omnidirectional light with configurable radius and attenuation. |
+| `SpotLight3D` | Cone-shaped light with inner and outer angle settings. |
+| `Skybox3D` | Renders a sky background. Requires an active `Camera3D` to be visible. |
+
+### UI / Widget Nodes
+
+Widgets live in screen space and are built from a separate set of node types including `Canvas`, `Quad`, `Text`, `Button`, `InputField`, `ScrollContainer`, `Slider`, `ProgressBar`, and more. See the UI documentation for details.
+
+---
+
+## Creating Nodes in the Editor
+
+1. Open a scene in the **Scene Hierarchy** panel.
+2. Right-click any existing node (or the blank area for a top-level node) and choose **Add New**.
+3. Select the node type from the list.
+4. Configure the node's properties in the **Inspector** panel on the right.
+5. Save the scene with **Ctrl+S**.
+
+<Note>
+When a node is added via the editor **Add Node** menu, the engine calls `OnSpawnedInEditor()` on it exactly once. This callback is **not** called when the scene is later saved and reloaded — use it for one-time editor-side setup (for example, adding a default child mesh) that should not repeat on every scene load.
+</Note>
+
+---
+
+## Creating Nodes at Runtime from Lua
+
+You can spawn nodes dynamically during gameplay using `Node:CreateChild()`. Pass the class name as a string. The new node is immediately parented to `self`.
+
+```lua
+function Spawner:SpawnEnemy()
+    local enemy = self:CreateChild("StaticMesh3D")
+    enemy:SetName("Enemy")
+    enemy:SetPosition(self:GetPosition())
+    enemy:SetScript("Monsters/Goblin")
+end
+```
+
+To instantiate a full scene asset at runtime, load the Scene asset and call `World.SpawnScene()`:
+
+```lua
+function Spawner:SpawnCoin()
+    local coinScene = LoadAsset("SC_Coin")
+    local coinRoot = World.SpawnScene(coinScene, Vec(0, 1, 0))
+end
+```
+
+To destroy a node safely at the end of the current frame, call `node:DestroyDeferred()` (also aliased as `node:Doom()`). Calling this instead of immediate destruction avoids invalidating iteration loops or callback stacks still referencing the node.

@@ -1,0 +1,188 @@
+---
+title: "Texture, SoundWave & Font Asset Lua APIs"
+sidebarTitle: "Textures & Sounds"
+description: "Lua API for Polyphase Texture (width, height, mips), SoundWave (duration, channels, sample rate, volume/pitch multipliers), and Font assets."
+---
+
+This page covers three asset types used for rendering and audio: `Texture` (image data), `SoundWave` (audio waveforms), and `Font` (TrueType font glyphs). All three inherit from [`Asset`](/lua/assets/asset).
+
+---
+
+## Texture
+
+A `Texture` asset holds image data loaded from an imported image file. Textures are referenced by materials and UI quads.
+
+Inherits: `Asset`
+
+### `Texture:GetWidth()`
+
+Get the texture width in pixels.
+
+**Returns:** `integer` — width.
+
+---
+
+### `Texture:GetHeight()`
+
+Get the texture height in pixels.
+
+**Returns:** `integer` — height.
+
+---
+
+### `Texture:IsMipmapped()`
+
+Check whether the texture has mipmaps generated.
+
+**Returns:** `boolean` — `true` if mipmapped.
+
+---
+
+### `Texture:GetMipLevels()`
+
+Get the number of mip levels.
+
+**Returns:** `integer` — mip level count.
+
+```lua
+local tex = LoadAsset("Textures/T_Terrain_Diffuse")
+Log.Debug(tex:GetName() .. " " .. tex:GetWidth() .. "x" .. tex:GetHeight())
+Log.Debug("Mips: " .. tex:GetMipLevels() .. "  Mipmapped: " .. tostring(tex:IsMipmapped()))
+```
+
+---
+
+## SoundWave
+
+A `SoundWave` asset holds PCM audio data imported from a `.wav` or similar file. It is used by `Audio3D` nodes and the global `Audio` system.
+
+Inherits: `Asset`
+
+### Volume & Pitch Multipliers
+
+#### `SoundWave:GetVolumeMultiplier()` / `SoundWave:SetVolumeMultiplier(mult)`
+
+Global volume multiplier applied to every voice using this wave.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `mult` | `number` | Volume multiplier. |
+
+---
+
+#### `SoundWave:GetPitchMultiplier()` / `SoundWave:SetPitchMultiplier(mult)`
+
+Global pitch multiplier applied to every voice using this wave.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `mult` | `number` | Pitch multiplier. |
+
+---
+
+### Audio Format
+
+#### `SoundWave:GetDuration()`
+
+Get the total duration of the wave in seconds.
+
+**Returns:** `number` — duration in seconds.
+
+---
+
+#### `SoundWave:GetNumChannels()`
+
+Get the number of audio channels. Either `1` (mono) or `2` (stereo).
+
+**Returns:** `integer` — channel count.
+
+---
+
+#### `SoundWave:GetBitsPerSample()`
+
+Get the bit depth: either `8` or `16`.
+
+**Returns:** `integer` — bits per sample.
+
+---
+
+#### `SoundWave:GetSampleRate()`
+
+Get the sample rate. Either `22050` or `44100` Hz.
+
+**Returns:** `integer` — sample rate in Hz.
+
+---
+
+#### `SoundWave:GetNumSamples()`
+
+Get the total number of samples across all channels.
+
+**Returns:** `integer` — sample count.
+
+---
+
+#### `SoundWave:GetByteRate()`
+
+Get the byte rate (bytes per second of audio).
+
+**Returns:** `integer` — byte rate.
+
+---
+
+#### `SoundWave:GetWaveDataSize()`
+
+Get the total size of the raw wave data in bytes.
+
+**Returns:** `integer` — data size in bytes.
+
+```lua
+local wave = LoadAsset("Sounds/SW_Music_Theme")
+Log.Debug("Duration: "    .. wave:GetDuration() .. "s")
+Log.Debug("Channels: "    .. wave:GetNumChannels())
+Log.Debug("Sample rate: " .. wave:GetSampleRate() .. " Hz")
+Log.Debug("Bit depth: "   .. wave:GetBitsPerSample())
+```
+
+---
+
+## Font
+
+A `Font` asset is loaded from a `.ttf` file. Only ASCII characters are supported.
+
+Inherits: `Asset`
+
+### `Font:GetSize()`
+
+Get the font size (the size used when the font texture was generated).
+
+**Returns:** `integer` — font size.
+
+---
+
+### `Font:GetTexture()`
+
+Get the underlying glyph atlas texture used by this font.
+
+**Returns:** `Texture` — font texture atlas.
+
+---
+
+### `Font:IsBold()`
+
+**Returns:** `boolean` — `true` if the font is bold.
+
+---
+
+### `Font:IsItalic()`
+
+**Returns:** `boolean` — `true` if the font is italic.
+
+```lua
+local font = LoadAsset("Fonts/F_Roboto_24")
+Log.Debug("Size: " .. font:GetSize() .. "  Bold: " .. tostring(font:IsBold()))
+
+local label = self:FindChild("Label")
+label:SetFont(font)
+label:SetTextSize(font:GetSize())
+```

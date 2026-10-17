@@ -1,0 +1,638 @@
+---
+title: "Renderer Lua API — Graphics Settings in Polyphase Engine"
+sidebarTitle: "Renderer"
+description: "Query screen size, toggle debug visualizations, control culling, resolution scale, light fade, clear color, and memory stats from Lua."
+---
+
+The `Renderer` global exposes runtime control over Polyphase Engine's rendering pipeline. From Lua you can toggle debug overlays, configure culling behaviour, adjust resolution, control light fading, draw debug geometry, and query per-platform memory and performance counters.
+
+---
+
+## Overlays & Console
+
+### Renderer.EnableStatsOverlay
+
+```lua
+Renderer.EnableStatsOverlay(enable, mode)
+```
+
+Shows or hides the on-screen performance stats overlay.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `enable` | `boolean` | — | Enable the overlay |
+| `mode` | `string` | `"Performance"` | Stats mode: `"Performance"`, `"Memory"`, or `"Network"` |
+
+```lua
+Renderer.EnableStatsOverlay(true, "Memory")
+```
+
+---
+
+### Renderer.EnableConsole
+
+```lua
+Renderer.EnableConsole(enable)
+```
+
+Enables the on-screen log console that displays log messages as they are emitted.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enable` | `boolean` | Enable the console |
+
+---
+
+### Renderer.DirtyAllWidgets
+
+```lua
+Renderer.DirtyAllWidgets()
+```
+
+Forces every widget to re-render on the next frame. This is an internal utility — avoid calling it from gameplay scripts.
+
+---
+
+## Frame Information
+
+### Renderer.GetFrameNumber
+
+```lua
+frameNum = Renderer.GetFrameNumber()
+```
+
+Returns the running frame count since engine start.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `frameNum` | `integer` | Monotonically increasing frame number |
+
+---
+
+### Renderer.GetFrameIndex
+
+```lua
+index = Renderer.GetFrameIndex()
+```
+
+Returns `0` or `1` — the current frame's ping-pong index. Useful for double-buffered per-frame data.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `index` | `integer` | `0` or `1` |
+
+---
+
+## Screen
+
+### Renderer.GetScreenResolution
+
+```lua
+res = Renderer.GetScreenResolution(index)
+```
+
+Returns the resolution of the specified screen. Index `1` is the main screen; index `2` is the 3DS bottom screen (matching `Engine.GetWorld`).
+
+<Tip>
+If you just need the resolution of the screen a node is drawn on, call `Node:GetScreenResolution()` instead — it handles the index lookup automatically.
+</Tip>
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `integer` | Screen index (`1` = main) |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `res` | `Vector` | `x` = width, `y` = height in pixels |
+
+```lua
+local res = Renderer.GetScreenResolution(1)
+Log.Debug("Screen: " .. res.x .. "x" .. res.y)
+```
+
+---
+
+### Renderer.GetGlobalUiScale
+
+```lua
+scale = Renderer.GetGlobalUiScale()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `scale` | `number` | Current global UI scale factor |
+
+---
+
+### Renderer.SetGlobalUiScale
+
+```lua
+Renderer.SetGlobalUiScale(scale)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `scale` | `number` | New UI scale factor |
+
+---
+
+## Debug Modes
+
+### Renderer.SetDebugMode
+
+```lua
+Renderer.SetDebugMode(mode)
+```
+
+Sets the global render debug visualisation mode.
+
+| Mode | Value | Description |
+|------|-------|-------------|
+| None | `0` | Normal rendering |
+| Shadow map | `1` | Visualise shadow maps |
+| Wireframe | `2` | Render all geometry as wireframe |
+| Collision | `3` | Visualise collision shapes |
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `mode` | `integer` | Debug mode |
+
+---
+
+### Renderer.GetDebugMode
+
+```lua
+mode = Renderer.GetDebugMode()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `mode` | `integer` | Current debug mode |
+
+---
+
+### Renderer.EnableProxyRendering
+
+```lua
+Renderer.EnableProxyRendering(enable)
+```
+
+Shows proxy geometry for non-renderable nodes like `Node3D`, `PointLight3D`, and `Box3D` so you can see their placement in the world.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enable` | `boolean` | Enable proxy rendering |
+
+---
+
+### Renderer.IsProxyRenderingEnabled
+
+```lua
+enabled = Renderer.IsProxyRenderingEnabled()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `enabled` | `boolean` | Whether proxy rendering is active |
+
+---
+
+### Renderer.SetBoundsDebugMode
+
+```lua
+Renderer.SetBoundsDebugMode(mode)
+```
+
+Controls rendering of mesh bounding boxes.
+
+| Mode | Value | Description |
+|------|-------|-------------|
+| Off | `0` | Disabled |
+| All | `1` | Draw bounds for all primitives |
+| Selected | `2` | Draw bounds for the selected primitive only |
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `mode` | `integer` | Bounds debug mode |
+
+---
+
+### Renderer.GetBoundsDebugMode
+
+```lua
+mode = Renderer.GetBoundsDebugMode()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `mode` | `integer` | Current bounds debug mode |
+
+---
+
+## Debug Drawing
+
+### Renderer.AddDebugDraw
+
+```lua
+Renderer.AddDebugDraw(mesh, pos, rot, scale, color, life, material)
+```
+
+Renders a debug mesh for a given number of seconds (or a single frame when `life` is `0`).
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `mesh` | `StaticMesh` | — | Mesh to render |
+| `pos` | `Vector` | — | World position |
+| `rot` | `Vector` | `Vec(0,0,0)` | Euler rotation |
+| `scale` | `Vector` | `Vec(1,1,1)` | Scale |
+| `color` | `Vector` | `Vec(0.25,0.25,1.0,1.0)` | Wireframe color |
+| `life` | `number` | `0` | Duration in seconds (`0` = this frame only) |
+| `material` | `Material` | `nil` | Material (`nil` = wireframe) |
+
+---
+
+### Renderer.AddDebugLine
+
+```lua
+Renderer.AddDebugLine(start, end, color, life)
+```
+
+Draws a debug line between two world positions.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `start` | `Vector` | Line start |
+| `end` | `Vector` | Line end |
+| `color` | `Vector` | Line color (RGBA) |
+| `life` | `number` | Duration (`0` = this frame only) |
+
+```lua
+-- Draw a red line from the player to the enemy for one second
+Renderer.AddDebugLine(
+    player:GetWorldPosition(),
+    enemy:GetWorldPosition(),
+    Vec(1, 0, 0, 1),
+    1.0
+)
+```
+
+---
+
+## Culling
+
+### Renderer.EnableFrustumCulling
+
+```lua
+Renderer.EnableFrustumCulling(enable)
+```
+
+Enables or disables frustum culling. Disabling it will hurt performance.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enable` | `boolean` | Enable frustum culling |
+
+---
+
+### Renderer.IsFrustumCullingEnabled
+
+```lua
+enabled = Renderer.IsFrustumCullingEnabled()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `enabled` | `boolean` | Whether frustum culling is enabled |
+
+---
+
+### Renderer.EnableOcclusionCulling
+
+```lua
+Renderer.EnableOcclusionCulling(enable)
+```
+
+Enables or disables baked occlusion culling globally. Only has effect in scenes with baked occlusion data.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enable` | `boolean` | Enable occlusion culling |
+
+---
+
+### Renderer.IsOcclusionCullingEnabled
+
+```lua
+enabled = Renderer.IsOcclusionCullingEnabled()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `enabled` | `boolean` | Whether occlusion culling is enabled |
+
+---
+
+### Renderer.GetNumFrustumCulled
+
+```lua
+count = Renderer.GetNumFrustumCulled()
+```
+
+Returns the number of draw calls eliminated by frustum culling in the last frame, summed across all rendered views.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `count` | `integer` | Draws culled by frustum |
+
+---
+
+### Renderer.GetNumOcclusionCulled
+
+```lua
+count = Renderer.GetNumOcclusionCulled()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `count` | `integer` | Draws culled by occlusion |
+
+---
+
+## 2D / 3D Rendering Toggles
+
+### Renderer.Enable3dRendering
+
+```lua
+Renderer.Enable3dRendering(enable)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enable` | `boolean` | Enable or disable 3D rendering |
+
+---
+
+### Renderer.Is3dRenderingEnabled
+
+```lua
+enabled = Renderer.Is3dRenderingEnabled()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `enabled` | `boolean` | 3D rendering enabled |
+
+---
+
+### Renderer.Enable2dRendering
+
+```lua
+Renderer.Enable2dRendering(enable)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enable` | `boolean` | Enable or disable 2D/widget rendering |
+
+---
+
+### Renderer.Is2dRenderingEnabled
+
+```lua
+enabled = Renderer.Is2dRenderingEnabled()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `enabled` | `boolean` | 2D rendering enabled |
+
+---
+
+## Light Fade
+
+Light fading automatically reduces active light counts as lights move further from the camera, improving performance.
+
+### Renderer.EnableLightFade
+
+```lua
+Renderer.EnableLightFade(enable)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enable` | `boolean` | Enable light fade |
+
+---
+
+### Renderer.IsLightFadeEnabled
+
+```lua
+enabled = Renderer.IsLightFadeEnabled()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `enabled` | `boolean` | Light fade is active |
+
+---
+
+### Renderer.SetLightFadeLimit
+
+```lua
+Renderer.SetLightFadeLimit(limit)
+```
+
+Sets the maximum number of lights that can be rendered when light fade is active.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `limit` | `integer` | Max active lights |
+
+---
+
+### Renderer.GetLightFadeLimit
+
+```lua
+limit = Renderer.GetLightFadeLimit()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `limit` | `integer` | Max active light count |
+
+---
+
+### Renderer.SetLightFadeSpeed
+
+```lua
+Renderer.SetLightFadeSpeed(speed)
+```
+
+Sets how quickly lights fade in/out. A speed of `1` means a light transitions from full brightness to zero in one second.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `speed` | `number` | Fade speed |
+
+---
+
+### Renderer.GetLightFadeSpeed
+
+```lua
+speed = Renderer.GetLightFadeSpeed()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `speed` | `number` | Current fade speed |
+
+---
+
+## Resolution & Clear Color
+
+### Renderer.SetResolutionScale
+
+```lua
+Renderer.SetResolutionScale(scale)
+```
+
+Scales internal render resolution. Only supported on Vulkan platforms. `1.0` = native resolution.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `scale` | `number` | Resolution scale factor |
+
+---
+
+### Renderer.GetResolutionScale
+
+```lua
+scale = Renderer.GetResolutionScale()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `scale` | `number` | Current resolution scale |
+
+---
+
+### Renderer.SetClearColor
+
+```lua
+Renderer.SetClearColor(color)
+```
+
+Sets the scene clear color. Ensure `alpha = 1.0` to see the color.
+
+<Warning>
+On Wii and GameCube, a non-zero alpha value breaks shadow mesh rendering. Use black with zero alpha (`Vec(0,0,0,0)`) when shadow meshes are present.
+</Warning>
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `color` | `Vector` | Clear color (RGBA) |
+
+---
+
+## Memory & Performance Stats
+
+### Renderer.GetRAMUsage
+
+```lua
+ram = Renderer.GetRAMUsage()
+```
+
+Returns current process RAM usage in megabytes. Implementation varies per platform (Windows: working set; Linux/Android: VmRSS; 3DS/Dolphin: main pool free bytes).
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `ram` | `number` | RAM usage in MB |
+
+---
+
+### Renderer.GetVRAMUsage
+
+```lua
+vram = Renderer.GetVRAMUsage()
+```
+
+Returns current VRAM usage in megabytes. Returns `0` on platforms without GPU memory tracking.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `vram` | `number` | VRAM usage in MB |
+
+---
+
+### Renderer.GetRAM1Usage
+
+```lua
+ram1 = Renderer.GetRAM1Usage()
+```
+
+Platform-specific memory pool 1 usage (3DS: linear heap free; Wii/GCN: MEM1 free). Returns `0` on Windows/Linux/Android.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `ram1` | `number` | Pool 1 usage in MB |
+
+---
+
+### Renderer.GetRAM2Usage
+
+```lua
+ram2 = Renderer.GetRAM2Usage()
+```
+
+Platform-specific memory pool 2 usage (3DS: VRAM free; Wii: MEM2 free). Returns `0` on Windows/Linux/Android/GameCube.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `ram2` | `number` | Pool 2 usage in MB |
+
+---
+
+### Renderer.GetCPUUsage
+
+```lua
+cpu = Renderer.GetCPUUsage()
+```
+
+Returns CPU usage as a percentage `(0–100)`. Returns `0` on 3DS/Dolphin/Android.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `cpu` | `number` | CPU usage percentage |
+
+---
+
+### Renderer.AddDebugResourcesWidget
+
+```lua
+widget = Renderer.AddDebugResourcesWidget(parent, showMultipleRAM, showFPS, showVRAM)
+```
+
+Creates and attaches a live `DebugResourcesWidget` that shows RAM, VRAM, and FPS bars. Updates memory every 0.5 s and FPS every frame.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `parent` | `Node` | — | Parent widget node |
+| `showMultipleRAM` | `boolean` | `true` | Show RAM1/RAM2 rows |
+| `showFPS` | `boolean` | `true` | Show FPS row |
+| `showVRAM` | `boolean` | `true` | Show VRAM row |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `widget` | `DebugResourcesWidget` | The created widget |
+
+```lua
+local panel = Renderer.AddDebugResourcesWidget(myCanvas, true, true, true)
+panel:SetAnchorMode(AnchorMode.TopRight)
+panel:SetPosition(-310, 10)
+
+-- Hide later
+panel:SetVisible(false)
+
+-- Or destroy it entirely
+panel:Destroy()
+```

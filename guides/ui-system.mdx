@@ -1,0 +1,607 @@
+---
+title: "UI System: Widgets, Lua, and XML/CSS Layouts"
+sidebarTitle: "UI System"
+description: "Polyphase UI: Canvas, Button, Text, Quad — build HUDs via editor or Lua, or author XML/CSS declarative layouts with data binding and component composition."
+---
+
+Polyphase's 2D UI is built on a hierarchy of **Widget** nodes. Every widget inherits from `Node`, so you create, parent, and manage widgets the same way you manage any other node in the scene tree. From a single `Quad` background to a fully declarative XML layout with CSS stylesheets, the system scales from quick HUDs to structured menus without changing your rendering pipeline.
+
+## Widget Node Hierarchy
+
+```
+Node
+└── Widget              (position, size, color, opacity, anchor, scissor, pivot, rotation, scale)
+     ├── Canvas          (lightweight empty container — no rendering overhead)
+     ├── Quad            (textured rectangle — backgrounds, icons, portraits)
+     ├── Text            (SDF-rendered text string)
+     ├── Button          (interactive — contains internal Quad + Text, four visual states)
+     ├── Poly            (arbitrary polygon / lines — Vulkan only)
+     │    └── PolyRect   (auto-generated rectangle outline — Vulkan only)
+     └── ArrayWidget     (auto-layout container, vertical or horizontal — C++ only)
+```
+
+Additional widgets available as scene nodes: **Slider**, **CheckBox**, **ComboBox**, **ScrollContainer**, **LineEdit**, **ProgressBar**, **AnimatedWidget**, **DialogWindow**, **Window**.
+
+---
+
+## Creating Widgets
+
+<Tabs>
+  <Tab title="Lua">
+    ```lua
+    -- As a child of an existing node (inside a script's Start())
+    local bg = self:CreateChild("Quad")
+    bg:SetName("Background")
+
+    -- Construct standalone and attach later
+    local bg = Node.Construct("Quad")
+    bg:SetName("Background")
+    bg:Attach(parentNode)
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    // As a child of an existing node
+    Quad* bg = parentNode->CreateChild<Quad>("Background");
+
+    // Or standalone
+    Quad* bg = Node::Construct<Quad>();
+    bg->SetName("Background");
+    parentNode->AddChild(bg);
+    ```
+  </Tab>
+  <Tab title="Editor">
+    Right-click in the scene hierarchy and select **Add Node → Widget / Quad / Text / Button / Canvas**. Configure position, size, color, and anchor in the Properties panel.
+  </Tab>
+</Tabs>
+
+---
+
+## The Anchor System
+
+The `AnchorMode` controls how a widget is positioned and sized relative to its parent. Polyphase defines 19 anchor modes across three categories.
+
+### Fixed-Position Anchors (9 modes)
+
+Anchor the widget to a specific corner or edge. `SetPosition()` is relative to that anchor point; the widget keeps its explicit width/height.
+
+```
+TopLeft ──── TopMid ──── TopRight
+   │            │            │
+MidLeft ────── Mid ────── MidRight
+   │            │            │
+BottomLeft ─ BottomMid ─ BottomRight
+```
+
+### Stretch Anchors (7 modes)
+
+Stretch along one or both axes. Use `SetRatios(x, y, w, h)` to define the widget's area as a fraction of the parent.
+
+| Mode | Stretches |
+|---|---|
+| `TopStretch` | Horizontal — fills parent width, anchored to top |
+| `MidHorizontalStretch` | Horizontal — fills parent width, centered vertically |
+| `BottomStretch` | Horizontal — fills parent width, anchored to bottom |
+| `LeftStretch` | Vertical — fills parent height, anchored to left |
+| `MidVerticalStretch` | Vertical — fills parent height, centered horizontally |
+| `RightStretch` | Vertical — fills parent height, anchored to right |
+| `FullStretch` | Both — fills entire parent area |
+
+### Fill Anchors (3 zero-config modes)
+
+Take **no parameters** — `Offset`, `Size`, and margins are ignored on the filled axis.
+
+| Mode | Fills |
+|---|---|
+| `Fill` | Both axes — rect matches parent's rect exactly |
+| `FillHorizontal` | X axis — width matches parent; `Offset.y` / `Size.y` still work as pixels |
+| `FillVertical` | Y axis — height matches parent; `Offset.x` / `Size.x` still work as pixels |
+
+```lua
+-- Background quad that always matches its parent's size
+local bg = panel:CreateChild("Quad")
+bg:SetAnchorMode(AnchorMode.Fill)
+-- No SetPosition, no SetDimensions needed.
+
+-- Header bar: full width, fixed 40 px height
+local header = panel:CreateChild("Quad")
+header:SetAnchorMode(AnchorMode.FillHorizontal)
+header:SetOffset(0, 0)   -- Y offset from parent top
+header:SetSize(0, 40)    -- Size.x ignored (X fills), Size.y = 40 px
+```
+
+### SetRatios Example
+
+```lua
+-- Bottom bar spanning 80% width, centered, 10% height
+local bar = canvas:CreateChild("Quad")
+bar:SetAnchorMode(AnchorMode.FullStretch)
+bar:SetRatios(0.1, 0.9, 0.8, 0.1)   -- x, y, w, h as fractions of parent
+```
+
+---
+
+## Displaying Images — Quad
+
+`Quad` renders a textured rectangle. Assign a texture, set dimensions and anchor, done.
+
+```lua
+local icon = self:CreateChild("Quad")
+icon:SetAnchorMode(AnchorMode.TopLeft)
+icon:SetPosition(20.0, 20.0)
+icon:SetDimensions(64.0, 64.0)
+icon:SetTexture(LoadAsset("T_Coin"))
+```
+
+### UV Tiling and Scrolling
+
+```lua
+-- Tile 4×4
+tiledBg:SetUvScale(Vec(4.0, 4.0))
+
+-- Scroll over time
+function MyUI:Tick(deltaTime)
+    local offset = self.scrollBg:GetUvOffset()
+    offset.x = offset.x + deltaTime * 0.1
+    self.scrollBg:SetUvOffset(offset)
+end
+```
+
+### Per-Vertex Colors (Gradients)
+
+```lua
+quad:SetVertexColors(
+    Vec(1, 0, 0, 1),  -- top-left (red)
+    Vec(0, 0, 1, 1),  -- top-right (blue)
+    Vec(1, 0, 0, 1),  -- bottom-left (red)
+    Vec(0, 0, 1, 1)   -- bottom-right (blue)
+)
+```
+
+---
+
+## Text Widget
+
+`Text` renders a string using a signed-distance-field font. Use it for scores, labels, dialogue, timers, and any dynamic on-screen text.
+
+```lua
+local label = self:CreateChild("Text")
+label:SetText("Score: 0")
+label:SetTextSize(24.0)
+label:SetFont(LoadAsset("F_MainFont"))
+label:SetColor(Vec(1, 1, 1, 1))
+```
+
+### Justification and Word Wrap
+
+```lua
+label:SetHorizontalJustification(Justification.Center)
+label:SetVerticalJustification(Justification.Center)
+
+local desc = self:CreateChild("Text")
+desc:EnableWordWrap(true)
+desc:SetText("A long description that will wrap automatically at the widget boundary.")
+```
+
+### Outline
+
+```lua
+label:SetOutlineColor(Vec(0, 0, 0, 1))   -- black outline for readability
+-- Outline size, softness, and cutoff are configurable in the editor
+```
+
+### Measuring Text
+
+```lua
+local w = label:GetTextWidth()
+local h = label:GetTextHeight()
+```
+
+### Dynamic Timer Example
+
+```lua
+function TimerUI:Tick(deltaTime)
+    self.timeRemaining = math.max(0, self.timeRemaining - deltaTime)
+    local m = math.floor(self.timeRemaining / 60)
+    local s = math.floor(self.timeRemaining % 60)
+    self.timerText:SetText(string.format("%d:%02d", m, s))
+end
+```
+
+---
+
+## Buttons
+
+`Button` is an interactive widget with built-in state management, visual feedback, and gamepad/keyboard navigation. Internally it holds a `Quad` (background) and a `Text` (label) as children.
+
+### Creating a Button
+
+```lua
+local btn = self:CreateChild("Button")
+btn:SetTextString("Play")
+btn:SetDimensions(200.0, 50.0)
+btn:SetAnchorMode(AnchorMode.Mid)
+```
+
+### Handling Clicks
+
+<Tabs>
+  <Tab title="OnActivated function">
+    Define an `OnActivated()` function on a script attached directly to the Button node — the engine calls it automatically:
+
+    ```lua
+    function MyButton:OnActivated()
+        Log.Debug("Button was clicked!")
+    end
+    ```
+  </Tab>
+  <Tab title="Signal connection">
+    Connect to the `"Activated"` signal to handle clicks on buttons that are children of your script node:
+
+    ```lua
+    function MyMenu:Start()
+        self.playBtn = self:CreateChild("Button")
+        self.playBtn:SetTextString("Play")
+        self.playBtn:SetDimensions(200.0, 50.0)
+        self.playBtn:SetAnchorMode(AnchorMode.Mid)
+        self.playBtn:ConnectSignal("Activated", self, MyMenu.OnPlayClicked)
+    end
+
+    function MyMenu:OnPlayClicked()
+        Log.Debug("Play clicked!")
+    end
+    ```
+  </Tab>
+</Tabs>
+
+### Button States and Visuals
+
+Four visual states — `Normal`, `Hovered`, `Pressed`, `Locked` — each with their own texture and color:
+
+```lua
+btn:SetStateTextures(
+    LoadAsset("T_BtnNormal"),
+    LoadAsset("T_BtnHovered"),
+    LoadAsset("T_BtnPressed"),
+    LoadAsset("T_BtnLocked")   -- pass nil for any you don't need
+)
+
+btn:SetStateColors(
+    Vec(0.5, 0.5, 0.5, 1.0),  -- normal
+    Vec(0.7, 0.7, 0.7, 1.0),  -- hovered
+    Vec(0.3, 0.3, 0.3, 1.0),  -- pressed
+    Vec(0.2, 0.2, 0.2, 0.5)   -- locked
+)
+
+btn:SetLocked()   -- disable all input
+```
+
+Access the internal Quad and Text for fine-grained control:
+
+```lua
+local quad = btn:GetQuad()
+local text = btn:GetText()
+text:SetTextSize(20.0)
+text:SetFont(LoadAsset("F_CustomFont"))
+```
+
+### Gamepad / Keyboard Navigation
+
+Connect buttons into a navigation graph:
+
+```lua
+self.playBtn:SetNavigation(nil, self.optionsBtn, nil, nil)        -- down → options
+self.optionsBtn:SetNavigation(self.playBtn, self.quitBtn, nil, nil) -- up ↑ play, down ↓ quit
+self.quitBtn:SetNavigation(self.optionsBtn, nil, nil, nil)        -- up → options
+
+Button.SetSelected(self.playBtn)   -- initial selection for gamepad/keyboard
+```
+
+```lua
+-- Enable or disable input methods globally
+Button.EnableMouseHandling(true)
+Button.EnableGamepadHandling(true)
+Button.EnableKeyboardHandling(true)
+```
+
+---
+
+## Building a Complete UI Screen
+
+### Pause Menu Example
+
+```lua
+function PauseMenu:Start()
+    self:SetAnchorMode(AnchorMode.FullStretch)
+    self:SetRatios(0.0, 0.0, 1.0, 1.0)
+    self:SetVisible(false)
+
+    -- Dim overlay
+    self.overlay = self:CreateChild("Quad")
+    self.overlay:SetAnchorMode(AnchorMode.FullStretch)
+    self.overlay:SetRatios(0.0, 0.0, 1.0, 1.0)
+    self.overlay:SetColor(Vec(0, 0, 0, 0.6))
+
+    -- Title
+    self.title = self:CreateChild("Text")
+    self.title:SetAnchorMode(AnchorMode.TopMid)
+    self.title:SetPosition(0.0, 60.0)
+    self.title:SetDimensions(300.0, 60.0)
+    self.title:SetTextSize(40.0)
+    self.title:SetText("Paused")
+    self.title:SetHorizontalJustification(Justification.Center)
+
+    -- Buttons with navigation
+    local buttonNames = {"Resume", "Options", "Quit"}
+    self.buttons = {}
+    for i, name in ipairs(buttonNames) do
+        local btn = self:CreateChild("Button")
+        btn:SetTextString(name)
+        btn:SetAnchorMode(AnchorMode.Mid)
+        btn:SetPosition(0.0, (i - 1) * 55.0 - 30.0)
+        btn:SetDimensions(200.0, 45.0)
+        btn:ConnectSignal("Activated", self, PauseMenu.OnButton)
+        self.buttons[i] = btn
+    end
+
+    for i, btn in ipairs(self.buttons) do
+        btn:SetNavigation(self.buttons[i - 1], self.buttons[i + 1], nil, nil)
+    end
+end
+
+function PauseMenu:Show()
+    self:SetVisible(true)
+    Button.SetSelected(self.buttons[1])
+end
+```
+
+### Persistent Widgets (Survives Scene Loads)
+
+```lua
+function GameHUD:Start()
+    self:SetPersistent(true)   -- survives scene transitions
+end
+```
+
+---
+
+## ArrayWidget — Auto-Layout (C++ Only)
+
+`ArrayWidget` automatically arranges children in a vertical or horizontal list with configurable spacing. Not exposed to Lua; use a loop with position offsets in Lua instead.
+
+```cpp
+ArrayWidget* list = parent->CreateChild<ArrayWidget>("ButtonList");
+list->SetAnchorMode(AnchorMode::Mid);
+list->SetDimensions(200.0f, 300.0f);
+// Orientation and spacing configured via editor properties
+
+for (int i = 0; i < 5; ++i)
+{
+    Button* btn = list->CreateChild<Button>(("Item" + std::to_string(i)).c_str());
+    btn->SetTextString("Item " + std::to_string(i));
+    btn->SetDimensions(180.0f, 40.0f);
+}
+```
+
+Any child with a `Fill` anchor mode triggers **flex-grow** — it expands to consume leftover space after non-Fill siblings are laid out. Two Fill children split leftover space equally.
+
+---
+
+## XML / CSS Declarative UI
+
+Polyphase's XML/CSS system lets you define UI trees in markup. It maps directly onto the existing Widget hierarchy — no new rendering code — so it works on all platforms including 3DS.
+
+### Quick Start
+
+<Steps>
+  <Step title="Create an XML layout file">
+    ```xml
+    <!-- UI/MainMenu.xml -->
+    <ui>
+      <link href="UI/menu.css" />
+
+      <div id="root" class="fullscreen">
+        <img class="background" src="T_MenuBg" />
+
+        <flex class="button-column">
+          <button id="play-btn" class="primary-btn" on-click="OnPlayClicked">
+            Play
+          </button>
+          <button id="settings-btn" class="primary-btn" on-click="OnSettingsClicked">
+            Settings
+          </button>
+        </flex>
+
+        <text class="version-label">v{{version}}</text>
+      </div>
+    </ui>
+    ```
+  </Step>
+  <Step title="Create a CSS stylesheet">
+    ```css
+    /* UI/menu.css */
+    .fullscreen { anchor: full-stretch; }
+    .background { anchor: full-stretch; }
+
+    .button-column {
+      anchor: center;
+      flex-direction: column;
+      gap: 12px;
+      width: 200px;
+      height: 200px;
+    }
+
+    .primary-btn {
+      width: 180px;
+      height: 48px;
+      background-color: #2a5db0;
+      --hovered-color: #3a6dc0;
+      --pressed-color: #1a4da0;
+      color: #ffffff;
+      font-size: 18px;
+      text-align: center;
+    }
+    ```
+  </Step>
+  <Step title="Load and mount from Lua">
+    ```lua
+    function MainMenu:Start()
+        self.ui = UI.Load("UI/MainMenu.xml")
+        self.ui:Mount(self)              -- mount onto this Canvas widget
+        self.ui:SetData("version", "1.0.3")
+    end
+
+    function MainMenu:Tick(deltaTime)
+        self.ui:Tick()
+    end
+
+    function MainMenu:Stop()
+        self.ui:Unmount()
+        self.ui:Destroy()
+    end
+
+    function OnPlayClicked()
+        Engine.GetWorld():LoadScene("Levels/Level1.scn")
+    end
+    ```
+  </Step>
+</Steps>
+
+### XML Element to Widget Mapping
+
+| Element | Widget Type | Notes |
+|---|---|---|
+| `<div>` | Canvas | Invisible grouping container |
+| `<flex>` | ArrayWidget | Auto-layout — `flex-direction: row/column` |
+| `<img>` | Quad | Use `src="AssetName"` |
+| `<text>`, `<p>`, `<span>` | Text | Aliases for the same widget |
+| `<button>` | Button | Inner text becomes the label |
+| `<canvas>` | Canvas | Explicit canvas |
+| `<poly>` | Poly | Vulkan only |
+| `<polyrect>` | PolyRect | Vulkan only |
+| `<include src="other.xml" />` | *(component import)* | Subtree composition |
+| `<link href="style.css" />` | *(stylesheet)* | External CSS |
+
+### CSS Property Reference
+
+<Accordion title="Layout properties">
+| Property | Values | Maps To |
+|---|---|---|
+| `width` / `height` | `Npx`, `N%` | `SetWidth()` / `SetWidthRatio()` |
+| `left` / `top` | `Npx`, `N%` | `SetX()` / `SetXRatio()` |
+| `margin` | `Npx` | `SetMargins()` (all sides) |
+| `anchor` | See anchor table | `SetAnchorMode()` |
+| `display: none` | — | `SetVisible(false)` |
+| `overflow: hidden` | — | `EnableScissor(true)` |
+| `flex-direction` | `row`, `column` | ArrayWidget orientation |
+| `gap` | `Npx` | ArrayWidget spacing |
+| `align-items: center` | — | `SetCentered(true)` |
+</Accordion>
+
+<Accordion title="Anchor CSS values">
+| CSS Value | AnchorMode |
+|---|---|
+| `top-left` / `top-center` / `top-right` | TopLeft / TopMid / TopRight |
+| `center-left` / `center` / `center-right` | MidLeft / Mid / MidRight |
+| `bottom-left` / `bottom-center` / `bottom-right` | BottomLeft / BottomMid / BottomRight |
+| `full-stretch` | FullStretch |
+| `fill` | Fill |
+| `fill-horizontal` | FillHorizontal |
+| `fill-vertical` | FillVertical |
+</Accordion>
+
+<Accordion title="Visual and text properties">
+| Property | Values | Maps To |
+|---|---|---|
+| `color` | `#hex`, `rgba()`, named | Text color |
+| `background-color` | `#hex`, `rgba()`, named | Widget/Quad/Button fill |
+| `background-image` | `url("AssetName")` | Texture on Quad/Button |
+| `opacity` | `0.0`–`1.0` | `SetOpacityFloat()` |
+| `font-family` | Asset name | `SetFont()` |
+| `font-size` | `Npx` | `SetTextSize()` |
+| `text-align` | `left`, `center`, `right` | `SetHorizontalJustification()` |
+| `vertical-align` | `top`, `center`, `bottom` | `SetVerticalJustification()` |
+| `word-wrap: break-word` | — | `EnableWordWrap(true)` |
+</Accordion>
+
+<Accordion title="Button state custom properties">
+| Property | Description |
+|---|---|
+| `--normal-color` / `--hovered-color` / `--pressed-color` / `--locked-color` | Per-state background color |
+| `--normal-texture` / `--hovered-texture` / `--pressed-texture` / `--locked-texture` | Per-state background texture |
+</Accordion>
+
+### Data Binding
+
+Use `{{variableName}}` in text content and call `SetData()` to update values:
+
+```xml
+<text>Score: {{score}} / {{maxScore}}</text>
+<text>Welcome, {{playerName}}!</text>
+```
+
+```lua
+doc:SetData("score", tostring(currentScore))
+doc:SetData("maxScore", "999")
+doc:SetData("playerName", playerName)
+```
+
+### Querying Widgets
+
+```lua
+local btn = doc:FindById("play-btn")          -- Widget or nil
+local items = doc:FindByClass("list-item")    -- table of Widgets
+local root = doc:GetRootWidget()
+```
+
+### Component Composition with `<include>`
+
+```xml
+<!-- UI/PlayerCard.xml -->
+<ui>
+  <div class="player-card">
+    <img class="avatar" src="T_DefaultAvatar" />
+    <text class="player-name">{{name}}</text>
+    <text class="player-score">Score: {{score}}</text>
+  </div>
+</ui>
+```
+
+```xml
+<!-- UI/HUD.xml -->
+<ui>
+  <link href="UI/hud.css" />
+  <div id="hud" class="fullscreen">
+    <include src="UI/PlayerCard.xml" />
+    <text id="timer" class="timer-text">{{time}}</text>
+  </div>
+</ui>
+```
+
+### Editor Workflow
+
+Create a **UI Document** asset: right-click in the Assets panel → **Create Asset → UI Document**. Double-click the asset to open the `.xml` source file in the built-in Script Editor or your external editor. Saving from the built-in editor automatically reimports the `.oct` asset — no manual reimport needed.
+
+Press **Ctrl+R** to sync all UIDocument `.xml` ↔ `.oct` files: newer XML is forward-imported; newer `.oct` is reverse-synced back to XML.
+
+### XSD Schema for IDE Autocomplete
+
+An XSD schema is auto-generated at `Engine/Generated/XML/PolyphaseUIDocument.xsd`. Add to `.vscode/settings.json`:
+
+```json
+{
+  "xml.fileAssociations": [
+    { "pattern": "**/*.xml", "systemId": "Engine/Generated/XML/PolyphaseUIDocument.xsd" }
+  ]
+}
+```
+
+Regenerate with:
+
+```bash
+python Tools/generate_ui_xsd.py
+```
+
+<Note>
+  On 3DS, the XML and CSS parsers use minimal memory. IrrXML is a forward-only reader; the CSS parser is a hand-written tokenizer with no regex. All widget rendering uses existing platform backends — no new rendering code.
+</Note>

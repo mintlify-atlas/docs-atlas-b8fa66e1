@@ -1,0 +1,297 @@
+---
+title: "Mesh Assets — StaticMesh and SkeletalMesh Lua API"
+sidebarTitle: "Meshes"
+description: "Lua API for Polyphase mesh assets: StaticMesh (vertices, indices, collision) and SkeletalMesh (sections, bones, animations, materials, section lookup)."
+---
+
+Polyphase exposes two mesh asset types in Lua. `StaticMesh` holds a triangle mesh with optional triangle collision data and vertex colors. `SkeletalMesh` extends that with a bone hierarchy, named animations, and per-section material slots. Both inherit from [`Asset`](/lua/assets/asset).
+
+---
+
+## StaticMesh
+
+A `StaticMesh` asset contains a static triangle mesh used by `StaticMesh3D` nodes.
+
+Inherits: `Asset`
+
+### Material
+
+#### `StaticMesh:GetMaterial()`
+
+Get the default material assigned to this mesh.
+
+**Returns:** `Material` — default material.
+
+---
+
+#### `StaticMesh:SetMaterial(material)`
+
+Assign a new default material.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `material` | `Material` | Material to assign. |
+
+---
+
+### Geometry Counts
+
+#### `StaticMesh:GetNumIndices()`
+
+**Returns:** `integer` — number of indices.
+
+---
+
+#### `StaticMesh:GetNumFaces()`
+
+**Returns:** `integer` — number of triangular faces.
+
+---
+
+#### `StaticMesh:GetNumVertices()`
+
+**Returns:** `integer` — number of vertices.
+
+---
+
+#### `StaticMesh:HasVertexColor()`
+
+**Returns:** `boolean` — `true` if the mesh has per-vertex color data.
+
+---
+
+### Geometry Data
+
+#### `StaticMesh:GetVertices()`
+
+Get the vertex data array. Each element is a table with the following fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `position` | `Vector` | Vertex position. |
+| `texcoord0` | `Vector` | First UV channel. |
+| `texcoord1` | `Vector` | Second UV channel. |
+| `normal` | `Vector` | Vertex normal. |
+| `color` | `integer` | RGBA8 packed color (`nil` if no vertex color). |
+
+**Returns:** `table` — array of vertex tables.
+
+---
+
+#### `StaticMesh:GetIndices()`
+
+Get the index array. Every three consecutive indices form a triangle. Indices are **zero-based**, so add `1` when indexing the vertex array.
+
+**Returns:** `table` — array of integer indices.
+
+```lua
+local mesh    = self:GetStaticMesh()
+local indices = mesh:GetIndices()
+local verts   = mesh:GetVertices()
+
+for i = 0, mesh:GetNumFaces() - 1 do
+    for j = 1, 3 do
+        local idx  = indices[i * 3 + j]
+        local vert = verts[idx + 1]       -- +1: Lua is 1-indexed
+        Log.Debug(tostring(vert.position))
+    end
+end
+```
+
+---
+
+### Triangle Collision
+
+#### `StaticMesh:HasTriangleMeshCollision()`
+
+**Returns:** `boolean` — `true` if triangle collision data has been generated.
+
+---
+
+#### `StaticMesh:EnableTriangleMeshCollision(enable)`
+
+Set whether triangle collision data should be generated for this mesh.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enable` | `boolean` | Generate triangle collision. |
+
+<Warning>Triangle collision is expensive for moving objects. Only use it on static scenery, and also enable it on the `StaticMesh3D` node via `SetUseTriangleCollision(true)`.</Warning>
+
+---
+
+## SkeletalMesh
+
+A `SkeletalMesh` asset contains a skinned triangle mesh with a bone hierarchy, embedded animations, and named material sections.
+
+Inherits: `Asset`
+
+### Material
+
+#### `SkeletalMesh:GetMaterial()`
+
+Get the mesh's default material.
+
+**Returns:** `Material` — default material.
+
+---
+
+#### `SkeletalMesh:SetMaterial(material)`
+
+Set the default material.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `material` | `Material` | New default material. |
+
+---
+
+### Geometry Counts
+
+#### `SkeletalMesh:GetNumIndices()`
+
+**Returns:** `integer` — number of indices.
+
+---
+
+#### `SkeletalMesh:GetNumFaces()`
+
+**Returns:** `integer` — number of triangular faces.
+
+---
+
+#### `SkeletalMesh:GetNumVertices()`
+
+**Returns:** `integer` — number of vertices.
+
+---
+
+### Bones
+
+#### `SkeletalMesh:GetNumBones()`
+
+**Returns:** `integer` — number of bones.
+
+---
+
+#### `SkeletalMesh:FindBoneIndex(name)`
+
+Look up a bone's index by name.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Bone name. |
+
+**Returns:** `integer` — bone index.
+
+---
+
+### Embedded Animations
+
+#### `SkeletalMesh:GetNumAnimations()`
+
+**Returns:** `integer` — number of animations embedded in the mesh.
+
+---
+
+#### `SkeletalMesh:GetAnimationName(index)`
+
+Get the name of an animation by index.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `integer` | Animation index. |
+
+**Returns:** `string` — animation name.
+
+---
+
+#### `SkeletalMesh:GetAnimationDuration(name)`
+
+Get the duration of a named animation.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Animation name. |
+
+**Returns:** `number` — duration in seconds.
+
+```lua
+local mesh = LoadAsset("Meshes/SK_Character")
+local count = mesh:GetNumAnimations()
+for i = 1, count do
+    local name = mesh:GetAnimationName(i)
+    local dur  = mesh:GetAnimationDuration(name)
+    Log.Debug(name .. ": " .. dur .. "s")
+end
+```
+
+---
+
+### Sections & Per-Section Materials
+
+A `SkeletalMesh` is divided into named sections (one per imported mesh primitive). Each section can have its own material assignment.
+
+#### `SkeletalMesh:GetNumSections()`
+
+Get the number of named sections. Legacy single-material meshes report `1` with a `"Default"` section.
+
+**Returns:** `integer` — section count.
+
+---
+
+#### `SkeletalMesh:GetSectionName(index)`
+
+Get a section's name by 1-based index.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `integer` | 1-based section index. |
+
+**Returns:** `string` — section name, or `nil` if out of range.
+
+---
+
+#### `SkeletalMesh:GetSectionMaterial(index)`
+
+Get a section's material. Falls back to the mesh default if the section has no explicit material.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `integer` | 1-based section index. |
+
+**Returns:** `Material` — resolved material.
+
+---
+
+#### `SkeletalMesh:SetSectionMaterial(index, material)`
+
+Assign a material to a section on the **asset**. Pass `nil` to revert to the default.
+
+<Note>This edits the shared asset. For per-instance overrides without touching the asset, use `SkeletalMesh3D:SetMaterialSlot()` on the node instead.</Note>
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `integer` | 1-based section index. |
+| `material` | `Material` | New material, or `nil` to clear. |
+
+---
+
+#### `SkeletalMesh:FindSectionIndex(name)`
+
+Look up a section's index by name.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Section name. |
+
+**Returns:** `integer` — 1-based section index, or `0` if not found.
+
+```lua
+-- Change the "Armor" section material on the shared asset
+local mesh = LoadAsset("Meshes/SK_HeroMale")
+local idx  = mesh:FindSectionIndex("Armor")
+if idx > 0 then
+    mesh:SetSectionMaterial(idx, LoadAsset("Materials/M_Armor_Red"))
+end
+```

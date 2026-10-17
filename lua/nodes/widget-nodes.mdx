@@ -1,0 +1,906 @@
+---
+title: "Widget Nodes — Full Lua UI API for Polyphase Engine"
+sidebarTitle: "Widget Nodes"
+description: "Lua API for Polyphase UI widgets: base Widget layout and opacity, Canvas, Button, Text, Quad, Slider, CheckBox, and ComboBox node types."
+---
+
+Widgets are 2D UI nodes that render in screen space. Every widget inherits from the `Widget` base class, which provides position, size, color, opacity, rotation, and anchor controls. Widgets inherit from [`Node`](/lua/nodes/node) but not from `Node3D` — they live entirely in 2D screen space.
+
+---
+
+## Widget (base class)
+
+All UI node types inherit these methods.
+
+### Layout — Pixels
+
+#### `Widget:SetX(x)` / `Widget:GetX()`
+
+Relative X position in pixels.
+
+---
+
+#### `Widget:SetY(y)` / `Widget:GetY()`
+
+Relative Y position in pixels.
+
+---
+
+#### `Widget:SetWidth(width)` / `Widget:GetWidth()`
+
+Width in pixels.
+
+---
+
+#### `Widget:SetHeight(height)` / `Widget:GetHeight()`
+
+Height in pixels.
+
+---
+
+#### `Widget:SetPosition(x, y)` / `Widget:GetPosition()`
+
+Set or get the widget's relative pixel position. A single `Vector` may be passed instead of two numbers.
+
+**Returns (Get):** `Vector` — position in `.x` and `.y`.
+
+---
+
+#### `Widget:SetDimensions(width, height)` / `Widget:GetDimensions()`
+
+Set or get the widget's pixel dimensions. A single `Vector` may be passed.
+
+**Returns (Get):** `Vector` — dimensions in `.x` and `.y`.
+
+---
+
+#### `Widget:SetRect(rect)`
+
+Set position and dimensions from a `Rect`. Note this is the *local* rect, not the screen-space rect returned by `GetRect()`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `rect` | `Rect` | Local rect (x, y, w, h). |
+
+---
+
+#### `Widget:GetRect()`
+
+Get the **computed screen-space** rect (updated each `Tick()`).
+
+**Returns:** `Rect` — screen-space rectangle.
+
+---
+
+#### `Widget:UpdateRect()`
+
+Force an immediate recalculation of the screen-space rect outside of the normal tick.
+
+---
+
+### Layout — Ratios
+
+Ratios are fractions of the parent widget's dimensions.
+
+#### `Widget:SetXRatio(xRatio)`
+
+X position as a fraction of parent width.
+
+---
+
+#### `Widget:SetYRatio(yRatio)`
+
+Y position as a fraction of parent height.
+
+---
+
+#### `Widget:SetWidthRatio(widthRatio)`
+
+Width as a fraction of parent width.
+
+---
+
+#### `Widget:SetHeightRatio(heightRatio)`
+
+Height as a fraction of parent height.
+
+---
+
+#### `Widget:SetRatios(x, y, width, height)`
+
+Set all four layout ratios in one call.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `x` | `number` | X ratio. |
+| `y` | `number` | Y ratio. |
+| `width` | `number` | Width ratio. |
+| `height` | `number` | Height ratio. |
+
+---
+
+### Layout — Margins
+
+#### `Widget:SetLeftMargin(margin)` / `Widget:SetTopMargin(margin)` / `Widget:SetRightMargin(margin)` / `Widget:SetBottomMargin(margin)`
+
+Set individual margins in pixels.
+
+---
+
+#### `Widget:SetMargins(left, top, right, bottom)`
+
+Set all four margins at once.
+
+---
+
+### Offset & Size
+
+#### `Widget:SetOffset(x, y)` / `Widget:GetOffset()`
+
+Explicit offset interpreted as pixels or parent-ratio depending on `AnchorMode`. A `Vector` may be passed.
+
+**Returns (Get):** `Vector` — offset in `.x` and `.y`.
+
+---
+
+#### `Widget:SetSize(x, y)` / `Widget:GetSize()`
+
+Size interpreted as pixels or ratio depending on `AnchorMode`. A `Vector` may be passed.
+
+**Returns (Get):** `Vector` — size in `.x` and `.y`.
+
+---
+
+### Anchor Mode
+
+#### `Widget:GetAnchorMode()` / `Widget:SetAnchorMode(anchorMode)`
+
+The anchor mode controls how the widget is positioned and sized relative to its parent. See the `AnchorMode` enum.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `anchorMode` | `integer` | `AnchorMode` enum value. |
+
+```lua
+-- Fill the parent widget completely
+self:SetAnchorMode(AnchorMode.FullStretch)
+```
+
+---
+
+#### `Widget:StretchX()`
+
+Check if the widget stretches along X based on its anchor mode.
+
+**Returns:** `boolean` — stretch X.
+
+---
+
+#### `Widget:StretchY()`
+
+Check if the widget stretches along Y.
+
+**Returns:** `boolean` — stretch Y.
+
+---
+
+### Parent Dimensions
+
+#### `Widget:GetParentWidth()`
+
+**Returns:** `number` — parent widget width in pixels.
+
+---
+
+#### `Widget:GetParentHeight()`
+
+**Returns:** `number` — parent widget height in pixels.
+
+---
+
+### Color & Opacity
+
+#### `Widget:SetColor(color)`
+
+Set the widget's tint color.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `color` | `Vector` | RGBA color vector. |
+
+---
+
+#### `Widget:SetOpacity(opacity)`
+
+Set opacity as an integer 0–255. Compounded with parent opacity during rendering.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `opacity` | `integer` | Opacity 0–255. |
+
+---
+
+#### `Widget:GetOpacity()`
+
+**Returns:** `integer` — opacity 0–255.
+
+---
+
+#### `Widget:SetOpacityFloat(opacity)`
+
+Set opacity as a float 0–1.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `opacity` | `number` | Opacity 0–1. |
+
+---
+
+#### `Widget:GetOpacityFloat()`
+
+**Returns:** `number` — opacity 0–1.
+
+---
+
+### Rotation & Scale
+
+#### `Widget:SetRotation(rotation)` / `Widget:GetRotation()`
+
+Rotation in degrees around the pivot point.
+
+---
+
+#### `Widget:SetPivot(x, y)` / `Widget:GetPivot()`
+
+Pivot point for rotation. `(0,0)` = top-left, `(0.5, 0.5)` = center, `(1, 1)` = bottom-right.
+
+**Returns (Get):** `Vector` — pivot as a ratio in `[0, 1]`.
+
+---
+
+#### `Widget:SetScale(x, y)` / `Widget:GetScale()`
+
+Widget scale. A `Vector` may be passed.
+
+---
+
+### Scissor
+
+#### `Widget:IsScissorEnabled()` / `Widget:EnableScissor(scissor)`
+
+When enabled, child widgets are clipped to the bounds of this widget.
+
+---
+
+### Hit Testing
+
+#### `Widget:ContainsMouse()`
+
+Check if the mouse cursor is inside this widget's rect.
+
+**Returns:** `boolean` — `true` if the cursor is inside.
+
+---
+
+#### `Widget:ContainsPoint(x, y)`
+
+Check if a screen point is inside this widget's rect.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `x` | `number` | X position in pixels. |
+| `y` | `number` | Y position in pixels. |
+
+**Returns:** `boolean` — `true` if point is inside.
+
+---
+
+#### `Widget:ShouldHandleInput()`
+
+**Returns:** `boolean` — `true` if this widget handles input events.
+
+---
+
+### Dirty State
+
+#### `Widget:MarkDirty()`
+
+Force this widget to recompute its rect and state on the next tick.
+
+---
+
+#### `Widget:IsDirty()`
+
+**Returns:** `boolean` — `true` if the widget needs a rect update.
+
+---
+
+## Canvas
+
+`Canvas` is a container widget that groups and organizes other widgets. It can enable scissor clipping to keep children within its bounds.
+
+Inherits: `Widget` → `Node`
+
+Canvas has no additional API beyond `Widget`. See the example for typical usage:
+
+```lua
+local canvas = self:CreateChild("Canvas")
+canvas:SetDimensions(400, 300)
+canvas:EnableScissor(true)
+
+local btn = canvas:CreateChild("Button")
+btn:SetPosition(10, 10)
+btn:SetDimensions(120, 40)
+btn:SetTextString("Start Game")
+```
+
+---
+
+## Button
+
+A pressable button composed of an internal `Text` and `Quad` widget. Assign to `button.OnActivated` or connect to the `Activated` signal to handle clicks.
+
+Inherits: `Widget` → `Node`
+
+### Global State
+
+#### `Button.SetSelected(button)`
+
+Set a specific button as the globally selected button.
+
+---
+
+#### `Button.GetSelected()`
+
+**Returns:** `Button` — the currently selected button.
+
+---
+
+#### `Button.EnableMouseHandling(enable)`
+
+Enable or disable mouse hover/click handling globally for all buttons.
+
+---
+
+#### `Button.EnableGamepadHandling(enable)`
+
+Enable or disable gamepad D-pad navigation globally for all buttons.
+
+---
+
+#### `Button.EnableKeyboardHandling(enable)`
+
+Enable or disable keyboard navigation globally for all buttons.
+
+---
+
+### Instance Methods
+
+#### `Button:IsSelected()`
+
+Check if this button is the currently selected button.
+
+**Returns:** `boolean` — `true` if selected.
+
+---
+
+#### `Button:Activate()`
+
+Programmatically activate the button as if it were clicked.
+
+---
+
+#### `Button:GetState()`
+
+Get the button's current state. See `ButtonState` enum (`Normal`, `Hovered`, `Pressed`, `Locked`).
+
+**Returns:** `integer` — `ButtonState` value.
+
+---
+
+#### `Button:SetLocked(locked)`
+
+Prevent activation while locked.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `locked` | `boolean` | Lock state. |
+
+---
+
+#### `Button:SetTextString(str)` / `Button:GetTextString()`
+
+Set or get the label text.
+
+---
+
+#### `Button:SetStateTextures(normal, hovered, pressed, locked)`
+
+Assign textures for each button state. Pass `nil` for states that should use the normal texture.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `normal` | `Texture` | Normal state texture. |
+| `hovered` | `Texture` | Hovered state texture. |
+| `pressed` | `Texture` | Pressed state texture. |
+| `locked` | `Texture` | Locked state texture. |
+
+---
+
+#### `Button:GetStateTextures()`
+
+**Returns:** `normal, hovered, pressed, locked` — four `Texture` values.
+
+---
+
+#### `Button:SetStateColors(normal, hovered, pressed, locked)`
+
+Assign colors for each button state.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `normal` | `Vector` | Normal color. |
+| `hovered` | `Vector` | Hovered color. |
+| `pressed` | `Vector` | Pressed color. |
+| `locked` | `Vector` | Locked color. |
+
+---
+
+#### `Button:GetStateColors()`
+
+**Returns:** `normal, hovered, pressed, locked` — four `Vector` values.
+
+---
+
+#### `Button:SetNavigation(up, down, left, right)`
+
+Set D-pad navigation targets for gamepad handling.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `up` | `Button` | Button navigated to on up. |
+| `down` | `Button` | Button navigated to on down. |
+| `left` | `Button` | Button navigated to on left. |
+| `right` | `Button` | Button navigated to on right. |
+
+---
+
+#### `Button:GetNavigation()`
+
+**Returns:** `up, down, left, right` — four `Button` values.
+
+---
+
+#### `Button:GetText()`
+
+Get the internal `Text` widget.
+
+**Returns:** `Text` — internal text widget.
+
+---
+
+#### `Button:GetQuad()`
+
+Get the internal `Quad` widget.
+
+**Returns:** `Quad` — internal quad widget.
+
+```lua
+function HUD:Start()
+    self.startBtn = self:FindChild("StartButton")
+    self.startBtn.OnActivated = function()
+        World:LoadLevel("Level_01")
+    end
+    Button.EnableMouseHandling(true)
+end
+```
+
+---
+
+## Text
+
+Renders a text string with a given font, size, color, and justification.
+
+Inherits: `Widget` → `Node`
+
+### `Text:SetFont(font)` / `Text:GetFont()`
+
+Assign or get the `Font` asset.
+
+---
+
+### `Text:SetTextSize(size)` / `Text:GetTextSize()`
+
+Font size.
+
+---
+
+### `Text:GetScaledTextSize()`
+
+**Returns:** `number` — size after applying widget scale.
+
+---
+
+### `Text:SetText(text)` / `Text:GetText()`
+
+The text string to display.
+
+---
+
+### `Text:GetTextWidth()`
+
+**Returns:** `number` — rendered text width in pixels.
+
+---
+
+### `Text:GetTextHeight()`
+
+**Returns:** `number` — rendered text height in pixels.
+
+---
+
+### `Text:GetScaledMinExtent()`
+
+**Returns:** `Vector` — minimum extent of text vertices in screen space.
+
+---
+
+### `Text:GetScaledMaxExtent()`
+
+**Returns:** `Vector` — maximum extent of text vertices in screen space.
+
+---
+
+### `Text:SetHorizontalJustification(just)` / `Text:GetHorizontalJustification()`
+
+Horizontal text alignment. See `Justification` enum (`Left`, `Right`, `Center`).
+
+---
+
+### `Text:SetVerticalJustification(just)` / `Text:GetVerticalJustification()`
+
+Vertical text alignment. See `Justification` enum (`Top`, `Bottom`, `Center`).
+
+---
+
+### `Text:EnableWordWrap(wrap)` / `Text:IsWordWrapEnabled()`
+
+When enabled, text wraps at the widget's rect boundary.
+
+```lua
+local label = self:CreateChild("Text")
+label:SetFont(LoadAsset("Fonts/F_Arial"))
+label:SetTextSize(24)
+label:SetText("Score: 0")
+label:SetColor(Vec(1, 1, 1, 1))
+label:SetHorizontalJustification(Justification.Center)
+```
+
+---
+
+## Quad
+
+Renders a textured rectangle widget.
+
+Inherits: `Widget` → `Node`
+
+### `Quad:SetTexture(texture)` / `Quad:GetTexture()`
+
+Assign or get the `Texture` asset.
+
+---
+
+### `Quad:SetVertexColors(topLeft, topRight, bottomLeft, bottomRight)`
+
+Set per-vertex colors. Colors are modulated with the texture color.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `topLeft` | `Vector` | Top-left vertex color. |
+| `topRight` | `Vector` | Top-right vertex color. |
+| `bottomLeft` | `Vector` | Bottom-left vertex color. |
+| `bottomRight` | `Vector` | Bottom-right vertex color. |
+
+---
+
+### `Quad:SetUvScale(uvScale)` / `Quad:GetUvScale()`
+
+UV tiling scale. Useful for repeating patterns.
+
+---
+
+### `Quad:SetUvOffset(uvOffset)` / `Quad:GetUvOffset()`
+
+UV scroll offset. Useful for animated backgrounds.
+
+```lua
+-- Scroll a background texture
+function ScrollBg:Tick(dt)
+    local offset = self.quad:GetUvOffset()
+    self.quad:SetUvOffset(Vec(offset.x + dt * 0.1, offset.y))
+end
+```
+
+---
+
+## Slider
+
+A draggable value slider composed of a background `Quad` and grabber `Quad`.
+
+Inherits: `Widget` → `Node`
+
+### `Slider:SetValue(value)` / `Slider:GetValue()`
+
+Current value, clamped between min and max.
+
+---
+
+### `Slider:SetMinValue(min)` / `Slider:GetMinValue()`
+
+Minimum value.
+
+---
+
+### `Slider:SetMaxValue(max)` / `Slider:GetMaxValue()`
+
+Maximum value.
+
+---
+
+### `Slider:SetStep(step)` / `Slider:GetStep()`
+
+Step increment. `0` = continuous.
+
+---
+
+### `Slider:GetRatio()`
+
+**Returns:** `number` — current value normalized to `[0, 1]`.
+
+---
+
+### `Slider:SetBackgroundColor(color)` / `Slider:GetBackgroundColor()`
+
+Track background color.
+
+---
+
+### `Slider:SetGrabberColor(color)` / `Slider:GetGrabberColor()`
+
+Draggable grabber color.
+
+---
+
+### `Slider:GetBackground()`
+
+**Returns:** `Quad` — internal background quad.
+
+---
+
+### `Slider:GetGrabber()`
+
+**Returns:** `Quad` — internal grabber quad.
+
+```lua
+local vol = self:FindChild("VolumeSlider")
+vol:SetMinValue(0)
+vol:SetMaxValue(1)
+vol:SetValue(0.8)
+-- Connect to built-in ValueChanged signal to react to user changes
+vol:ConnectSignal("ValueChanged", self, function(self, value)
+    Audio.SetMasterVolume(value)
+end)
+```
+
+---
+
+## CheckBox
+
+A toggle checkbox with a box indicator and a text label.
+
+Inherits: `Widget` → `Node`
+
+### `CheckBox:SetChecked(checked)` / `CheckBox:IsChecked()`
+
+Checked state.
+
+---
+
+### `CheckBox:Toggle()`
+
+Toggle the checked state.
+
+---
+
+### `CheckBox:SetText(text)` / `CheckBox:GetText()`
+
+Label text.
+
+---
+
+### `CheckBox:SetCheckedColor(color)` / `CheckBox:GetCheckedColor()`
+
+Box color when checked.
+
+---
+
+### `CheckBox:SetUncheckedColor(color)` / `CheckBox:GetUncheckedColor()`
+
+Box color when unchecked.
+
+---
+
+### `CheckBox:SetTextColor(color)` / `CheckBox:GetTextColor()`
+
+Label text color.
+
+---
+
+### `CheckBox:SetBoxSize(size)` / `CheckBox:GetBoxSize()`
+
+Size of the checkbox indicator box in pixels.
+
+---
+
+### `CheckBox:SetSpacing(spacing)` / `CheckBox:GetSpacing()`
+
+Spacing in pixels between the box and the label.
+
+---
+
+### `CheckBox:GetBoxQuad()`
+
+**Returns:** `Quad` — internal box quad.
+
+---
+
+### `CheckBox:GetTextWidget()`
+
+**Returns:** `Text` — internal text widget.
+
+---
+
+## ComboBox
+
+A dropdown selection widget that reveals a list of options when opened.
+
+Inherits: `Widget` → `Node`
+
+### Options
+
+#### `ComboBox:AddOption(option)`
+
+Append an option string to the dropdown list.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `option` | `string` | Option text. |
+
+---
+
+#### `ComboBox:RemoveOption(index)`
+
+Remove an option by index.
+
+---
+
+#### `ComboBox:ClearOptions()`
+
+Remove all options.
+
+---
+
+#### `ComboBox:SetOptions(options)`
+
+Replace the full option list from a Lua array.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `options` | `table` | Array of option strings. |
+
+---
+
+#### `ComboBox:GetOptions()`
+
+**Returns:** `table` — array of option strings.
+
+---
+
+#### `ComboBox:GetOptionCount()`
+
+**Returns:** `integer` — number of options.
+
+---
+
+### Selection
+
+#### `ComboBox:SetSelectedIndex(index)` / `ComboBox:GetSelectedIndex()`
+
+Selected option index. `-1` = none selected.
+
+---
+
+#### `ComboBox:GetSelectedOption()`
+
+**Returns:** `string` — selected option text, or empty string if none.
+
+---
+
+### Dropdown State
+
+#### `ComboBox:IsOpen()`
+
+**Returns:** `boolean` — `true` if the dropdown is open.
+
+---
+
+#### `ComboBox:Open()`
+
+Open the dropdown.
+
+---
+
+#### `ComboBox:Close()`
+
+Close the dropdown.
+
+---
+
+#### `ComboBox:Toggle()`
+
+Toggle the dropdown open/closed.
+
+---
+
+### Appearance
+
+#### `ComboBox:SetBackgroundColor(color)` / `ComboBox:GetBackgroundColor()`
+
+Header background color.
+
+---
+
+#### `ComboBox:SetTextColor(color)` / `ComboBox:GetTextColor()`
+
+Text color.
+
+---
+
+#### `ComboBox:SetDropdownColor(color)` / `ComboBox:GetDropdownColor()`
+
+Dropdown list background color.
+
+---
+
+#### `ComboBox:SetHoveredColor(color)` / `ComboBox:GetHoveredColor()`
+
+Hovered item highlight color.
+
+---
+
+#### `ComboBox:SetMaxVisibleItems(count)` / `ComboBox:GetMaxVisibleItems()`
+
+Maximum number of items visible in the open dropdown.
+
+---
+
+### Internal Widgets
+
+#### `ComboBox:GetBackground()`
+
+**Returns:** `Quad` — header background quad.
+
+---
+
+#### `ComboBox:GetTextWidget()`
+
+**Returns:** `Text` — text widget showing the current selection.
+
+```lua
+local quality = self:FindChild("QualityCombo")
+quality:SetOptions({"Low", "Medium", "High", "Ultra"})
+quality:SetSelectedIndex(2)  -- default to "High"
+quality:ConnectSignal("SelectionChanged", self, function(self, idx)
+    Graphics.SetQualityLevel(idx)
+end)
+```

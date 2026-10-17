@@ -1,72 +1,152 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mintlify Starter Kit",
+  "name": "Polyphase Engine",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#ffc700",
+    "light": "#140c2b",
+    "dark": "#e64048"
   },
-  "favicon": "/favicon.svg",
-  "navigation": {
-    "pages": [
-      {
-        "group": "Getting Started",
-        "pages": [
-          "index",
-          "quickstart"
-        ]
-      }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
+  "favicon": "https://media.brand.dev/2af02e90-09e6-497d-b0d7-eeff2f27c7e0.png",
   "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
+    "light": "https://media.brand.dev/69c300f3-b69d-4485-9f7a-e95c4a710b59.png",
+    "dark": "https://media.brand.dev/69c300f3-b69d-4485-9f7a-e95c4a710b59.png"
   },
   "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:support@mintlify.com"
-      }
-    ],
     "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://app.mintlify.com"
+      "type": "github",
+      "href": "https://github.com/Polyphase-Labs/Polyphase-Engine"
     }
-  },
-  "contextual": {
-    "options": [
-      "copy",
-      "view",
-      "chatgpt",
-      "claude",
-      "perplexity",
-      "mcp",
-      "cursor",
-      "vscode"
-    ]
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
+      "github": "https://github.com/Polyphase-Labs/Polyphase-Engine"
     }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Getting Started",
+        "groups": [
+          {
+            "group": "Introduction",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "editor-overview"
+            ]
+          },
+          {
+            "group": "Setup",
+            "pages": [
+              "setup/windows",
+              "setup/linux",
+              "setup/mac",
+              "setup/compiling",
+              "setup/docker"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "guides/scripting",
+              "guides/scenes-and-nodes",
+              "guides/assets",
+              "guides/input",
+              "guides/packaging"
+            ]
+          },
+          {
+            "group": "Graphics & Rendering",
+            "pages": [
+              "guides/materials",
+              "guides/skeletal-animation",
+              "guides/node-graph",
+              "guides/ui-system",
+              "guides/terrain-and-voxels"
+            ]
+          },
+          {
+            "group": "Gameplay Systems",
+            "pages": [
+              "guides/networking",
+              "guides/physics-and-navmesh",
+              "guides/audio",
+              "guides/timeline",
+              "guides/save-data"
+            ]
+          },
+          {
+            "group": "Platform Targets",
+            "pages": [
+              "platforms/wii-gamecube",
+              "platforms/3ds",
+              "platforms/desktop",
+              "platforms/android"
+            ]
+          },
+          {
+            "group": "Extending the Engine",
+            "pages": [
+              "guides/addons",
+              "guides/native-addons",
+              "guides/csharp-scripting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Lua API",
+        "groups": [
+          {
+            "group": "Systems",
+            "pages": [
+              "lua/systems/engine",
+              "lua/systems/world",
+              "lua/systems/input",
+              "lua/systems/audio",
+              "lua/systems/renderer",
+              "lua/systems/network",
+              "lua/systems/log"
+            ]
+          },
+          {
+            "group": "Nodes",
+            "pages": [
+              "lua/nodes/node",
+              "lua/nodes/node3d",
+              "lua/nodes/mesh-nodes",
+              "lua/nodes/light-nodes",
+              "lua/nodes/physics-nodes",
+              "lua/nodes/widget-nodes"
+            ]
+          },
+          {
+            "group": "Assets",
+            "pages": [
+              "lua/assets/asset",
+              "lua/assets/materials",
+              "lua/assets/meshes",
+              "lua/assets/textures-and-sounds",
+              "lua/assets/animation-assets"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "lua/misc/vector",
+              "lua/misc/enums",
+              "lua/misc/globals",
+              "lua/misc/signal"
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

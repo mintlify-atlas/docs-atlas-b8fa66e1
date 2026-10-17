@@ -1,0 +1,642 @@
+---
+title: "Mesh Nodes — StaticMesh3D and SkeletalMesh3D Lua API"
+sidebarTitle: "Mesh Nodes"
+description: "Lua API for Polyphase mesh nodes: Mesh3D base (material overrides, billboard), StaticMesh3D, and SkeletalMesh3D (animation, bones, sockets, notifies)."
+---
+
+Polyphase provides two mesh node types built on a common `Mesh3D` base class. `StaticMesh3D` renders a non-animated triangle mesh. `SkeletalMesh3D` renders a skinned mesh and drives it with a multi-slot animation system that supports blending, queuing, and animation event notifies.
+
+All three classes also inherit from [`Primitive3D`](/lua/nodes/physics-nodes), [`Node3D`](/lua/nodes/node3d), and [`Node`](/lua/nodes/node).
+
+---
+
+## Mesh3D (base class)
+
+`Mesh3D` is the common base for both static and skeletal mesh nodes. It handles material assignment and the billboard option.
+
+### `Mesh3D:GetMaterial()`
+
+Get the material this mesh uses for rendering. Returns the material override if one is set, otherwise returns the mesh asset's own material.
+
+**Returns:** `Material` — active rendering material.
+
+---
+
+### `Mesh3D:GetMaterialOverride()`
+
+Get the override material assigned to this node instance.
+
+**Returns:** `Material` — override material, or `nil` if none is set.
+
+---
+
+### `Mesh3D:SetMaterialOverride(material)`
+
+Assign an override material to this node. The override takes precedence over whatever material the mesh asset specifies.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `material` | `Material` | Override material, or `nil` to clear. |
+
+```lua
+local mat = LoadAsset("Materials/M_Highlight")
+self.mesh:SetMaterialOverride(mat)
+```
+
+---
+
+### `Mesh3D:InstantiateMaterial()`
+
+Create a new `MaterialInstance` based on the mesh's current material and assign it to this node. Useful for per-instance parameter changes.
+
+**Returns:** `Material` — the newly created material instance.
+
+```lua
+local inst = self.mesh:InstantiateMaterial()
+inst:SetVectorParameter("Color", Vec(1, 0, 0, 1))
+```
+
+---
+
+### `Mesh3D:IsBillboard()`
+
+Check whether this mesh is set to billboard (always face the camera).
+
+**Returns:** `boolean` — `true` if billboarding is enabled.
+
+---
+
+### `Mesh3D:SetBillboard(billboard)`
+
+Enable or disable billboard rendering. Billboarded meshes always rotate to face the camera.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `billboard` | `boolean` | Whether to billboard. |
+
+---
+
+## StaticMesh3D
+
+`StaticMesh3D` renders a non-animated `StaticMesh` asset.
+
+### `StaticMesh3D:SetStaticMesh(mesh)`
+
+Set the static mesh asset to render.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `mesh` | `StaticMesh` | Static mesh asset. |
+
+---
+
+### `StaticMesh3D:GetStaticMesh()`
+
+Get the static mesh asset assigned to this node.
+
+**Returns:** `StaticMesh` — the assigned mesh asset.
+
+---
+
+### `StaticMesh3D:SetUseTriangleCollision(triCollision)`
+
+Allow or disallow triangle-mesh collision. The mesh asset must also have "Generate Triangle Collision" enabled. Triangle collision should only be used on non-moving objects due to performance cost.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `triCollision` | `boolean` | Enable triangle collision. |
+
+---
+
+### `StaticMesh3D:GetUseTriangleCollision()`
+
+Check whether triangle collision is enabled.
+
+**Returns:** `boolean` — `true` if triangle collision is active.
+
+---
+
+### `StaticMesh3D:GetBakeLighting()`
+
+Check whether this node uses baked lighting.
+
+**Returns:** `boolean` — `true` if baked lighting is enabled.
+
+```lua
+-- Swap meshes at runtime
+function Prop:Upgrade()
+    local newMesh = LoadAsset("Meshes/SM_PropUpgraded")
+    self:SetStaticMesh(newMesh)
+end
+```
+
+---
+
+## SkeletalMesh3D
+
+`SkeletalMesh3D` renders a skinned mesh and supports a multi-slot animation system capable of blending up to eight animations simultaneously.
+
+### `SkeletalMesh3D:SetSkeletalMesh(mesh)`
+
+Assign a skeletal mesh asset.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `mesh` | `SkeletalMesh` | Skeletal mesh asset. |
+
+---
+
+### `SkeletalMesh3D:GetSkeletalMesh()`
+
+Get the currently assigned skeletal mesh asset.
+
+**Returns:** `SkeletalMesh` — the mesh asset.
+
+---
+
+## Animation Playback
+
+### `SkeletalMesh3D:PlayAnimation(animName, slot, loop, speed, weight)`
+
+Play an animation. Up to eight slots (0–7) can play simultaneously; blending is controlled by `weight`. Pass `slot = -1` to use the next available slot.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `animName` | `string` | Name of the animation to play. |
+| `slot` | `integer` | Animation slot (0–7). `-1` auto-selects. |
+| `loop` | `boolean` | Whether to loop. Defaults to `false`. |
+| `speed` | `number` | Playback speed multiplier. `1` = normal. |
+| `weight` | `number` | Blend weight. `1` = full weight. |
+
+```lua
+self.mesh:PlayAnimation("Run", 0, true, 1.0, 1.0)
+```
+
+---
+
+### `SkeletalMesh3D:StopAnimation(animName, cancelQueued)`
+
+Stop a specific animation.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `animName` | `string` | Name of the animation to stop. |
+| `cancelQueued` | `boolean` | Also remove it from the play queue if not yet started. |
+
+---
+
+### `SkeletalMesh3D:StopAllAnimations(cancelQueued)`
+
+Stop all currently playing animations.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `cancelQueued` | `boolean` | Also remove all queued animations. |
+
+---
+
+### `SkeletalMesh3D:IsAnimationPlaying(animName)`
+
+Check whether a specific animation is playing.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `animName` | `string` | Animation name. |
+
+**Returns:** `boolean` — `true` if playing.
+
+---
+
+### `SkeletalMesh3D:QueueAnimation(animName, dependentAnimName, slot, loop, speed, weight)`
+
+Queue an animation to play after another finishes. If no `dependentAnimName` is given, it waits for the highest-slot animation.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `animName` | `string` | Animation to queue. |
+| `dependentAnimName` | `string` | Wait for this animation to finish. `nil` = highest slot. |
+| `slot` | `integer` | Slot to use. `-1` auto-selects. |
+| `loop` | `boolean` | Whether to loop. |
+| `speed` | `number` | Speed multiplier. |
+| `weight` | `number` | Blend weight. |
+
+---
+
+### `SkeletalMesh3D:CancelQueuedAnimation(animName)`
+
+Cancel a specific queued animation.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `animName` | `string` | Name of the queued animation. |
+
+---
+
+### `SkeletalMesh3D:CancelAllQueuedAnimations()`
+
+Cancel all queued animations.
+
+---
+
+### `SkeletalMesh3D:ResetAnimation()`
+
+Reset all animations to their first frame.
+
+---
+
+## Animation Speed & Pause
+
+### `SkeletalMesh3D:GetAnimationSpeed()`
+
+Get the global animation speed multiplier applied to all animations on this node.
+
+**Returns:** `number` — speed multiplier.
+
+---
+
+### `SkeletalMesh3D:SetAnimationSpeed(speed)`
+
+Set the global animation speed multiplier for all animations.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `speed` | `number` | Speed multiplier. |
+
+---
+
+### `SkeletalMesh3D:SetAnimationPaused(paused)`
+
+Pause or unpause all animations on this node.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `paused` | `boolean` | Whether to pause. |
+
+---
+
+### `SkeletalMesh3D:IsAnimationPaused()`
+
+Check whether animations are paused.
+
+**Returns:** `boolean` — `true` if paused.
+
+---
+
+## Animation Time
+
+### `SkeletalMesh3D:GetAnimationTime(animName)`
+
+Get the current playback time of an animation in seconds. Returns `-1` if the animation is not playing.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `animName` | `string` | Animation name. |
+
+**Returns:** `number` — playback time in seconds, or `-1`.
+
+---
+
+### `SkeletalMesh3D:GetAnimationNormalizedTime(animName)`
+
+Get playback progress as a value from `0` to `1`. Returns `-1` if not playing.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `animName` | `string` | Animation name. |
+
+**Returns:** `number` — normalized progress, or `-1`.
+
+---
+
+### `SkeletalMesh3D:SetAnimationTime(animName, seconds)`
+
+Scrub a playing animation to a specific time.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `animName` | `string` | Animation name. |
+| `seconds` | `number` | Time in seconds to scrub to. |
+
+---
+
+### `SkeletalMesh3D:SetAnimationNormalizedTime(animName, t)`
+
+Scrub a playing animation to a normalized point (0–1).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `animName` | `string` | Animation name. |
+| `t` | `number` | Progress from 0 to 1. |
+
+---
+
+## Animation Notifies
+
+### `SkeletalMesh3D:AddAnimationNotify(animName, normalizedTime, callback)`
+
+Register a callback that fires every time playback crosses a specific normalized point in an animation. Returns a handle for removal.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `animName` | `string` | Animation to watch. |
+| `normalizedTime` | `number` | Trigger point from `0` to `1`. |
+| `callback` | `function` | Called when playback crosses the point. |
+
+**Returns:** `integer` — handle for `RemoveAnimationNotify`, or `-1` on failure.
+
+<Warning>Notifies only fire while the animation's time is advancing. Under the default `AnimationUpdateMode.OnlyUpdateWhenRendered`, off-screen characters do not advance animations. For gameplay-critical notifies, call `SetAnimationUpdateMode(AnimationUpdateMode.AlwaysUpdateTime)`.</Warning>
+
+```lua
+function Player:Start()
+    self.mesh:AddAnimationNotify("DrawSword", 0.4, function()
+        self.sword:SetAttachSocket("WeaponHand_R")
+    end)
+end
+```
+
+---
+
+### `SkeletalMesh3D:RemoveAnimationNotify(handle)`
+
+Remove a previously registered notify.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `handle` | `integer` | Handle returned by `AddAnimationNotify`. |
+
+---
+
+### `SkeletalMesh3D:ClearAnimationNotifies(animName)`
+
+Remove all notifies, or just those for one animation if `animName` is provided.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `animName` | `string` | Optional. Omit to remove all notifies on this node. |
+
+---
+
+### `SkeletalMesh3D:SetAnimEventHandler(handlerFunc)`
+
+Set a handler for DCC-authored animation events (bones named `Event_MyAnimEvent`). The handler is called with the event name whenever the keyframe is reached.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `handlerFunc` | `function` | Function invoked when any anim event fires. |
+
+---
+
+## Bones
+
+### `SkeletalMesh3D:GetNumBones()`
+
+Get the number of bones in the mesh.
+
+**Returns:** `integer` — bone count.
+
+---
+
+### `SkeletalMesh3D:GetBonePosition(boneName)`
+
+Get a bone's world-space position.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `boneName` | `string` | Bone name. |
+
+**Returns:** `Vector` — world-space position.
+
+---
+
+### `SkeletalMesh3D:GetBoneRotation(boneName)`
+
+Get a bone's rotation as Euler angles.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `boneName` | `string` | Bone name. |
+
+**Returns:** `Vector` — Euler angles.
+
+---
+
+### `SkeletalMesh3D:GetBoneScale(boneName)`
+
+Get a bone's scale.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `boneName` | `string` | Bone name. |
+
+**Returns:** `Vector` — scale.
+
+---
+
+## Sockets
+
+### `SkeletalMesh3D:GetNumSockets()`
+
+Get the number of named sockets on the assigned mesh asset.
+
+**Returns:** `integer` — socket count.
+
+---
+
+### `SkeletalMesh3D:GetSocketName(index)`
+
+Get the name of a socket by 1-based index.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `integer` | 1-based socket index. |
+
+**Returns:** `string` — socket name, or `nil` if out of range.
+
+---
+
+### `SkeletalMesh3D:GetSocketPosition(socketName)`
+
+Get the world-space position of a socket (or bone). Useful for spawning effects without reparenting.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `socketName` | `string` | Socket or bone name. |
+
+**Returns:** `Vector` — world-space position.
+
+```lua
+-- Spawn a muzzle flash at the gun socket
+local pos = self.gun:GetSocketPosition("Muzzle")
+SpawnParticle(pos)
+```
+
+---
+
+### `SkeletalMesh3D:GetSocketRotation(socketName)`
+
+Get the world-space Euler rotation of a socket.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `socketName` | `string` | Socket or bone name. |
+
+**Returns:** `Vector` — world-space Euler rotation in degrees.
+
+---
+
+## Material Slots
+
+### `SkeletalMesh3D:GetNumMaterialSlots()`
+
+Get the number of per-section material slots on this node.
+
+**Returns:** `integer` — slot count.
+
+---
+
+### `SkeletalMesh3D:GetMaterialSlot(slotOrName)`
+
+Resolve the material that will render a given section, walking the full lookup chain: node override → section material → mesh default.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `slotOrName` | `integer\|string` | 1-based slot index or section name. |
+
+**Returns:** `Material` — resolved material.
+
+---
+
+### `SkeletalMesh3D:SetMaterialSlot(slotOrName, material)`
+
+Override the material for one section on this node instance without affecting the mesh asset. Pass `nil` to clear the override.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `slotOrName` | `integer\|string` | 1-based slot index or section name. |
+| `material` | `Material` | New material, or `nil` to clear. |
+
+```lua
+local bodyMat = LoadAsset("Materials/M_CharBody_Red")
+self.mesh:SetMaterialSlot("Body", bodyMat)
+```
+
+---
+
+### `SkeletalMesh3D:FindMaterialSlot(name)`
+
+Look up a section's slot index by section name.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Section name. |
+
+**Returns:** `integer` — 1-based slot index, or `0` if not found.
+
+---
+
+## Pose Inheritance
+
+### `SkeletalMesh3D:SetInheritPose(inheritPose)`
+
+Set whether this node should inherit its pose from a parent `SkeletalMesh3D`. Useful for clothing or accessories that must follow the body skeleton.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `inheritPose` | `boolean` | Whether to inherit parent pose. |
+
+---
+
+### `SkeletalMesh3D:IsInheritPoseEnabled()`
+
+**Returns:** `boolean` — `true` if pose inheritance is enabled.
+
+---
+
+## Bounds Override
+
+### `SkeletalMesh3D:SetBoundsRadiusOverride(radius)`
+
+Override the culling bounds radius. Useful when animations move vertices outside the default bounds, causing incorrect frustum culling. Set `0` to use the mesh default.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `radius` | `number` | Override radius. |
+
+---
+
+### `SkeletalMesh3D:GetBoundsRadiusOverride()`
+
+**Returns:** `number` — current bounds radius override.
+
+---
+
+## External Animation Assets
+
+### `SkeletalMesh3D:AddAnimationAsset(asset)`
+
+Add a `SkeletalAnimationAsset` to this node's animation list so its clip name resolves via `PlayAnimation`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `asset` | `SkeletalAnimationAsset` | Clip to add. |
+
+---
+
+### `SkeletalMesh3D:RemoveAnimationAsset(asset)`
+
+Remove a clip from this node's animation list.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `asset` | `SkeletalAnimationAsset` | Clip to remove. |
+
+---
+
+### `SkeletalMesh3D:GetNumAnimationAssets()`
+
+Get the number of external animation assets attached to this node.
+
+**Returns:** `integer` — count.
+
+---
+
+### `SkeletalMesh3D:GetAnimationAsset(index)`
+
+Get one entry from the animation assets list.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `integer` | 1-based list index. |
+
+**Returns:** `SkeletalAnimationAsset` — the clip, or `nil` if out of range.
+
+---
+
+## Full Example
+
+```lua
+function Character:Start()
+    -- Assign mesh and material
+    self.mesh = self:FindChild("Mesh")
+    self.mesh:SetSkeletalMesh(LoadAsset("Meshes/SK_HeroMale"))
+
+    -- Override one section's material per instance
+    local armor = LoadAsset("Materials/M_Armor_Blue")
+    self.mesh:SetMaterialSlot("Armor", armor)
+
+    -- Play idle in slot 0, footstep sounds via notify
+    self.mesh:PlayAnimation("Idle", 0, true)
+    self.mesh:AddAnimationNotify("Walk", 0.5, function()
+        Audio.PlaySound2D("Footstep")
+    end)
+end
+
+function Character:Tick(dt)
+    if self.moving then
+        if not self.mesh:IsAnimationPlaying("Walk") then
+            self.mesh:StopAnimation("Idle")
+            self.mesh:PlayAnimation("Walk", 0, true)
+        end
+    end
+end
+```

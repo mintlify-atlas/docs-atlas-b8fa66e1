@@ -1,0 +1,415 @@
+---
+title: "Timeline and Cutscene System for Sequenced Events"
+sidebarTitle: "Timeline"
+description: "Orchestrate transforms, animations, audio, and Lua function calls across multiple nodes using the Timeline asset, tracks, clips, and the TimelinePlayer node."
+---
+
+The Timeline system lets you author time-based sequences that control multiple scene nodes from a single asset — transforms, skeletal animations, audio, property values, Lua function calls, and visibility toggling. A `TimelinePlayer` node drives playback at runtime, and the full API is accessible from both C++ and Lua.
+
+## Core Concepts
+
+A **Timeline** is an asset that holds a duration, play rate, loop flag, and an ordered list of tracks. Each **Track** targets a single scene node (bound by UUID) and holds one or more time-ranged **Clips**. Clips with keyframe support can interpolate between values at specific local times; clips without keyframes (activate, animation, audio) act as simple time spans.
+
+```
+Timeline (Asset)
+  ├── Track 0  →  Node A  (TransformTrack)
+  │     ├── Clip [0.0 .. 2.0]  keyframe @ 0.0, keyframe @ 2.0
+  │     └── Clip [3.0 .. 5.0]  keyframe @ 0.0, keyframe @ 2.0
+  ├── Track 1  →  Node B  (AudioTrack)
+  │     └── Clip [1.0 .. 4.0]  SoundWave, fade-in 0.3s, fade-out 0.5s
+  └── Track 2  →  Node C  (FunctionCallTrack)
+        └── Clip [0.0 .. 5.0]  keyframe @ 1.5 → "OnExplosion"
+```
+
+## Setup Workflow
+
+<Steps>
+  <Step title="Create a Timeline asset">
+    Right-click in the Asset Browser and select **Create → Timeline**. Set the **Duration** (seconds), **Play Rate**, and toggle **Loop** / **Auto Play** as needed.
+
+    | Property | Default | Description |
+    |---|---|---|
+    | Duration | 5.0 s | Total length of the sequence |
+    | Play Rate | 1.0 | Global speed multiplier |
+    | Loop | false | Wrap back to 0 at the end |
+    | Auto Play | false | Begin playback when the scene starts |
+  </Step>
+  <Step title="Add tracks and clips">
+    Inside the Timeline editor, add tracks targeting specific scene nodes. Each track type determines what it controls on its target:
+
+    | Track Type | Target Node | What It Controls |
+    |---|---|---|
+    | `TransformTrack` | `Node3D` | Position, rotation, scale (keyframed) |
+    | `ScriptValueTrack` | Any node with a script | Any script-exposed property by name (keyframed) |
+    | `FunctionCallTrack` | Any node with a script | Calls Lua functions at keyframed times (fire-once) |
+    | `ActivateTrack` | Any node | Active and visible state over a time span |
+    | `AnimationTrack` | `SkeletalMesh3D` | Skeletal animation playback |
+    | `AudioTrack` | `Audio3D` | Sound wave playback with fade-in/out |
+  </Step>
+  <Step title="Add a TimelinePlayer to your scene">
+    Insert a `TimelinePlayer` node into the scene hierarchy. In the Properties panel, assign the Timeline asset you created. Enable **Play On Start** to begin automatically, or leave it off and call `Play()` from script.
+  </Step>
+  <Step title="Control playback from Lua">
+    Get a reference to the `TimelinePlayer` node and call `Play()`, `Pause()`, `Stop()`, or `SetTime()` at any point:
+
+    ```lua
+    function GameManager:Start()
+        self.player = self:FindChild("CutscenePlayer")
+        self.player:Play()
+    end
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Built-in Track Types
+
+### TransformTrack
+
+Animates the position, rotation, and scale of a `Node3D`. Keyframes store a full transform (position as `vec3`, rotation as quaternion, scale as `vec3`) and an interpolation mode. Rotation uses spherical linear interpolation (`slerp`); position and scale use linear interpolation (`mix`).
+
+```
+Interpolation modes: Linear | Step | Cubic
+```
+
+A `Step` keyframe snaps to its value instantly with no blending. Use it for teleporting a node or switching between discrete states.
+
+### ScriptValueTrack
+
+Animates any script-exposed property on a node by name. The property name stored in the track is matched at runtime against the node's reflected properties. Supports `Float`, `Vector` (vec3), `Vector2D`, and `Color` (vec4) for smooth interpolation; all other `DatumType` values use Step behaviour.
+
+### FunctionCallTrack
+
+Fires Lua functions at specific times. Each keyframe stores a `mTime` and a `mFunctionName`. Functions are called **once** as the playhead crosses their time — the clip tracks `mLastFiredKeyframe` to prevent re-firing on subsequent frames. Useful for triggering particle effects, spawning objects, or advancing dialogue at precise moments.
+
+```lua
+-- Define functions on the target node's script component
+function Character:OnExplosion()
+    SpawnParticleEffect(self:GetWorldPosition())
+end
+
+function Character:OnDoorOpen()
+    self.door:SetActive(true)
+end
+```
+
+In the Timeline editor, add a `FunctionCallTrack` targeting this node, then add keyframes at the desired times with function names `"OnExplosion"` and `"OnDoorOpen"`.
+
+### ActivateTrack
+
+Toggles a node's active and visible state over a clip's time range. When the clip is active, it sets the node to the clip's configured state (`SetActive` / `SetVisible`). When the playhead is outside any clip, the node is set inactive and invisible. On `Stop()`, nodes are restored to their pre-play state from the snapshot taken when playback began.
+
+### AnimationTrack
+
+Drives skeletal animation on a `SkeletalMesh3D` node. The timeline owns the playback cursor (speed is set to 0 on the animation; the timeline drives time directly). Supports three wrap modes:
+
+| Wrap Mode | Behaviour |
+|---|---|
+| `Loop` | `fmod(localTime, animDuration)` |
+| `Hold` | Clamp at the last frame |
+| `PingPong` | Reverse direction at each boundary |
+
+Clips have **Blend In** and **Blend Out** durations and a **Weight** multiplier for layering multiple animations.
+
+### AudioTrack
+
+Plays a `SoundWave` on an `Audio3D` node. The clip controls volume, pitch, fade-in/fade-out duration, loop flag, and end behaviour (`Stop` or `Continue`). When the playhead leaves the clip's range and the end mode is `Stop`, the audio node is told to stop. When the playhead enters the clip's range, playback starts automatically.
+
+---
+
+## TimelinePlayer Node
+
+`TimelinePlayer` is the scene node that drives playback. Add it to your scene, assign a Timeline asset, and control it from script.
+
+### Playback Control
+
+<Tabs>
+  <Tab title="Lua">
+    ```lua
+    player:Play()        -- start or resume from current position
+    player:Pause()       -- pause; cursor position is preserved
+    player:Stop()        -- stop and reset to time 0; restores all target nodes
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    player->Play();
+    player->Pause();
+    player->StopPlayback();   // Note: StopPlayback() in C++, Stop() in Lua
+    ```
+  </Tab>
+</Tabs>
+
+### Time and Progress
+
+<Tabs>
+  <Tab title="Lua">
+    ```lua
+    player:SetTime(2.5)            -- seek to 2.5 seconds
+    local t   = player:GetTime()   -- current position in seconds
+    local dur = player:GetDuration()
+    local pct = player:GetProgress()  -- 0.0 to 1.0
+
+    local playing = player:IsPlaying()
+    local paused  = player:IsPaused()
+    ```
+  </Tab>
+  <Tab title="C++">
+    ```cpp
+    player->SetTime(2.5f);
+    float t    = player->GetTime();
+    float dur  = player->GetDuration();
+    float pct  = player->GetProgress();
+    bool  play = player->IsPlaying();
+    bool  paus = player->IsPaused();
+    ```
+  </Tab>
+</Tabs>
+
+### Asset Management
+
+```lua
+-- Assign at runtime
+local tl = LoadAsset("Timelines/T_Intro")
+player:SetTimeline(tl)
+player:Play()
+
+-- Query the timeline asset
+local tl     = player:GetTimeline()
+local dur    = tl:GetDuration()
+local loops  = tl:IsLooping()
+local rate   = tl:GetPlayRate()
+local tracks = tl:GetNumTracks()
+```
+
+### Signals and Callbacks
+
+`TimelinePlayer` emits these signals when playback state changes:
+
+| Signal | Emitted When |
+|---|---|
+| `OnStarted` | `Play()` is called |
+| `OnFinished` | Timeline reaches the end (non-looping only) |
+| `OnStopped` | `Stop()` is called |
+| `OnStateChanged` | Any state change |
+
+Connect via the signal system or define script callback functions with matching names:
+
+```lua
+-- Using signal connections
+function GameManager:Start()
+    local player = self:FindChild("CutscenePlayer")
+    player:ConnectSignal("OnFinished", self, self.OnCutsceneFinished)
+end
+
+function GameManager:OnCutsceneFinished()
+    -- Restore player control, fade in UI, etc.
+    self.hud:SetVisible(true)
+end
+
+-- Or define callbacks on the TimelinePlayer's own script component
+function CutsceneScript:OnStarted()
+    Log.Debug("Cutscene started at " .. self:GetTime())
+end
+
+function CutsceneScript:OnFinished()
+    Log.Debug("Cutscene complete")
+end
+
+function CutsceneScript:OnStateChanged()
+    Log.Debug("Progress: " .. (self:GetProgress() * 100) .. "%")
+end
+```
+
+---
+
+## Lua Examples
+
+<Accordion title="Basic cutscene with pause/resume controls">
+  ```lua
+  function CutsceneController:Start()
+      self.player = self:FindChild("TimelinePlayer")
+      self.player:ConnectSignal("OnFinished", self, self.OnFinished)
+      self.player:Play()
+  end
+
+  function CutsceneController:OnFinished()
+      Log.Debug("Cutscene complete")
+      self:RestorePlayerControl()
+  end
+
+  function CutsceneController:TogglePause()
+      if self.player:IsPaused() then
+          self.player:Play()
+      else
+          self.player:Pause()
+      end
+  end
+
+  function CutsceneController:SkipToEnd()
+      self.player:SetTime(self.player:GetDuration())
+  end
+  ```
+</Accordion>
+
+<Accordion title="Load and play a timeline from an asset path">
+  ```lua
+  function LevelIntro:Start()
+      local tl = LoadAsset("Timelines/T_LevelIntro")
+      if tl == nil then
+          Log.Warning("Could not load timeline asset")
+          return
+      end
+      local player = self:FindChild("TimelinePlayer")
+      player:SetTimeline(tl)
+      player:SetPlayOnStart(false)
+      player:Play()
+  end
+  ```
+</Accordion>
+
+<Accordion title="FunctionCallTrack — called Lua functions">
+  A `FunctionCallTrack` targeting a node with a script component calls the named Lua function exactly once as the playhead crosses each keyframe time:
+
+  ```lua
+  -- On the target node's script component:
+
+  function Cinematic:OnLightsOff()
+      self:GetWorld():FindNode("SunLight"):SetActive(false)
+  end
+
+  function Cinematic:OnExplosion()
+      local pos = self:GetWorldPosition()
+      -- spawn particle effect, play impact sound, etc.
+  end
+
+  function Cinematic:OnCreditsStart()
+      self:GetWorld():FindNode("CreditsUI"):SetVisible(true)
+  end
+  ```
+
+  In the editor: add a `FunctionCallTrack` targeting this node, then place keyframes at the exact times where each function should fire.
+</Accordion>
+
+---
+
+## Creating Custom Track Types in C++
+
+To add a track type that isn't built in, implement a `TimelineClip` subclass and a `TimelineTrack` subclass. Use the provided macros to register them with the engine's type system.
+
+<Steps>
+  <Step title="Define the keyframe struct">
+    ```cpp
+    // ColorClip.h
+    #include "Timeline/TimelineTypes.h"
+    #include <glm/glm.hpp>
+
+    struct ColorKeyframe
+    {
+        float      mTime      = 0.0f;
+        glm::vec4  mColor     = glm::vec4(1.0f);
+        InterpMode mInterpMode = InterpMode::Linear;
+    };
+    ```
+  </Step>
+  <Step title="Create and implement the Clip class">
+    Inherit `TimelineClip`, use `DECLARE_CLIP`, implement serialization (`SaveStream` / `LoadStream`), keyframe management, and evaluation:
+
+    ```cpp
+    // ColorClip.h
+    class ColorClip : public TimelineClip
+    {
+    public:
+        DECLARE_CLIP(ColorClip, TimelineClip);
+        virtual bool     SupportsKeyframes() const override { return true; }
+        virtual uint32_t GetNumKeyframes() const override;
+        virtual float    GetKeyframeTime(uint32_t index) const override;
+        virtual void     AddKeyframeAtTime(float localTime, Node* targetNode) override;
+        virtual void     SetKeyframeTime(uint32_t index, float time) override;
+        virtual void     RemoveKeyframe(uint32_t index) override;
+        glm::vec4 EvaluateAtLocalTime(float localTime) const;
+    private:
+        std::vector<ColorKeyframe> mKeyframes;
+    };
+
+    // ColorClip.cpp
+    FORCE_LINK_DEF(ColorClip);
+    DEFINE_CLIP(ColorClip);
+
+    glm::vec4 ColorClip::EvaluateAtLocalTime(float localTime) const
+    {
+        if (mKeyframes.empty()) return glm::vec4(1.0f);
+        if (mKeyframes.size() == 1 || localTime <= mKeyframes[0].mTime)
+            return mKeyframes[0].mColor;
+        if (localTime >= mKeyframes.back().mTime)
+            return mKeyframes.back().mColor;
+
+        uint32_t i = 0;
+        for (; i < mKeyframes.size() - 1; ++i)
+            if (localTime < mKeyframes[i + 1].mTime) break;
+
+        const ColorKeyframe& kf0 = mKeyframes[i];
+        const ColorKeyframe& kf1 = mKeyframes[i + 1];
+        if (kf0.mInterpMode == InterpMode::Step) return kf0.mColor;
+
+        float t = (localTime - kf0.mTime) / (kf1.mTime - kf0.mTime);
+        return glm::mix(kf0.mColor, kf1.mColor, t);
+    }
+    ```
+  </Step>
+  <Step title="Create and implement the Track class">
+    Inherit `TimelineTrack`, use `DECLARE_TRACK` and `DEFINE_TRACK`, and implement `Evaluate()` and `Reset()`:
+
+    ```cpp
+    // ColorTrack.h
+    class ColorTrack : public TimelineTrack
+    {
+    public:
+        DECLARE_TRACK(ColorTrack, TimelineTrack);
+        virtual void       Evaluate(float time, Node* target, TimelineInstance* inst) override;
+        virtual void       Reset(Node* target, TimelineInstance* inst) override;
+        virtual const char* GetTrackTypeName() const override { return "Color"; }
+        virtual glm::vec4  GetTrackColor() const override;
+        virtual TypeId     GetDefaultClipType() const override;
+    };
+
+    // ColorTrack.cpp
+    FORCE_LINK_DEF(ColorTrack);
+    DEFINE_TRACK(ColorTrack);
+
+    void ColorTrack::Evaluate(float time, Node* target, TimelineInstance* inst)
+    {
+        if (target == nullptr) return;
+        for (uint32_t i = 0; i < GetNumClips(); ++i)
+        {
+            TimelineClip* baseClip = GetClip(i);
+            if (baseClip->ContainsTime(time))
+            {
+                ColorClip* clip  = static_cast<ColorClip*>(baseClip);
+                float localTime  = clip->GetLocalTime(time);
+                glm::vec4 color  = clip->EvaluateAtLocalTime(localTime);
+                // target->SetColor(color);   // apply to your node type
+                break;
+            }
+        }
+    }
+    ```
+  </Step>
+  <Step title="Register with the Visual Studio project">
+    Add all new `.h` and `.cpp` files to `Engine/Engine.vcxproj` and `Engine/Engine.vcxproj.filters` under `Source Files\Engine\Timeline\Tracks` (and the matching header group). For console builds, also add the files to the relevant `Engine/Makefile_*`.
+  </Step>
+</Steps>
+
+<Note>
+Track and clip data (individual tracks, clips, keyframes) is **not accessible from Lua** at runtime. The Lua API is limited to playback control and top-level timeline property queries. Modify track contents through the editor or C++ tooling code.
+</Note>
+
+## Summary Checklist for Custom Tracks
+
+1. Keyframe struct — `mTime` + data fields + optional `mInterpMode`
+2. Clip header — inherit `TimelineClip`, use `DECLARE_CLIP`, override keyframe API
+3. Clip implementation — `FORCE_LINK_DEF` + `DEFINE_CLIP`, serialization, evaluation
+4. Track header — inherit `TimelineTrack`, use `DECLARE_TRACK`, override `Evaluate`/`Reset`/metadata
+5. Track implementation — `FORCE_LINK_DEF` + `DEFINE_TRACK`, iterate clips, apply to node
+6. `vcxproj` — add all `.h` and `.cpp` files to the project and filters

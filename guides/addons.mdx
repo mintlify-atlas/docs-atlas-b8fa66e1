@@ -1,0 +1,258 @@
+---
+title: "Using and Creating Addons for Polyphase Engine"
+sidebarTitle: "Addons"
+description: "Browse, install, and create Polyphase addons — content packs of assets and scripts that merge into existing projects and are distributed via GitHub."
+---
+
+Addons are content packs that add assets, scripts, and functionality to a project you are already working on. Unlike templates — which create new projects from scratch — addons **merge** their contents into an existing project. When a user installs an addon, its `Assets/` and `Scripts/` folders are copied into the project, existing files are never overwritten, and the addon's metadata files (`package.json`, `thumbnail.png`) are not copied.
+
+## The Addons Window
+
+Open the Addons window via **File → Addons…** or the toolbar button.
+
+<CardGroup cols={3}>
+  <Card title="Browse" icon="magnifying-glass">
+    Shows all addons available from your configured repositories. Filter by name using the search bar or click tag buttons to filter by category. Each card shows a thumbnail, name, author, and download status.
+  </Card>
+  <Card title="Installed" icon="circle-check">
+    Shows all addons currently installed in your project. From here you can update an addon when a newer version is available, or uninstall it (note: files already copied to your project may remain on disk).
+  </Card>
+  <Card title="Repositories" icon="database">
+    Add GitHub repository URLs that host addon collections. Once added, all addons in that repository appear in the Browse tab.
+  </Card>
+</CardGroup>
+
+## Installing an Addon
+
+<Steps>
+  <Step title="Open the Browse tab">
+    In the Addons window, click **Browse Addons**. All addons from your configured repositories are listed.
+  </Step>
+  <Step title="Find an addon">
+    Use the search bar or tag buttons to filter. Click **View More** on any card to see the full description and source URL.
+  </Step>
+  <Step title="Download">
+    Click **Download** on the addon card. The editor fetches the addon and merges its contents into your project's `Assets/` and `Scripts/` folders.
+  </Step>
+</Steps>
+
+Downloaded addons are cached locally:
+
+| Platform | Cache path |
+|----------|-----------|
+| Windows | `%APPDATA%\PolyphaseEditor\AddonCache\` |
+| Linux | `~/.config/PolyphaseEditor/AddonCache\` |
+
+Each project tracks installed addons in `{ProjectDir}/Settings/installed_addons.json`, recording the addon ID, version, install date, and source repository URL.
+
+## Adding a Repository
+
+1. Go to the **Repositories** tab
+2. Click **+ Add Repo**
+3. Enter a GitHub URL (e.g., `https://github.com/yourname/polyphase-addons`)
+4. Click **Add**
+
+The editor fetches the root `package.json` from the repository, reads the `addons` array, and adds each addon to the Browse tab.
+
+## Creating an Addon
+
+Addons follow the same directory structure as templates but are designed for merging rather than project creation. No `.octp` or `.ini` files should be included.
+
+### Directory Structure
+
+```
+my-addon/
+    package.json        # Required: addon metadata
+    thumbnail.png       # Optional: preview image (256×256 recommended)
+    Assets/             # Assets to add to the project
+        Textures/
+        Materials/
+        Prefabs/
+    Scripts/            # Lua scripts to add to the project
+        MyFeature.lua
+```
+
+### package.json Format
+
+```json
+{
+    "name": "Particle Effects Pack",
+    "author": "Your Name",
+    "description": "A collection of 50+ particle effects for explosions, magic, weather, and more.",
+    "url": "https://github.com/yourname/particle-effects",
+    "version": "1.0.0",
+    "updated": "2024-01-15",
+    "tags": ["effects", "particles", "visual", "2D", "3D"]
+}
+```
+
+**Field reference:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Display name shown in the addon browser |
+| `author` | Yes | Your name or organization |
+| `description` | Yes | What this addon provides |
+| `url` | No | Link to the addon's repository or webpage |
+| `version` | Yes | Semantic version (e.g., `"1.0.0"`) |
+| `updated` | Yes | Last update date (`YYYY-MM-DD`) |
+| `tags` | No | Array of strings for category filtering |
+
+### What Gets Installed
+
+| Item | Installed? |
+|------|-----------|
+| `Assets/` folder contents | ✓ Copied to project's `Assets/` |
+| `Scripts/` folder contents | ✓ Copied to project's `Scripts/` |
+| Files that already exist | ✗ Never overwritten |
+| `package.json` | ✗ Metadata only, not copied |
+| `thumbnail.png` | ✗ Metadata only, not copied |
+| `.octp` or `.ini` files | ✗ Skipped |
+
+### Addons vs. Templates
+
+| Aspect | Templates | Addons |
+|--------|-----------|--------|
+| Purpose | Create new projects | Add to existing projects |
+| Includes `.octp` | Yes | No |
+| Installation behavior | Copies all files | Merges, skips existing files |
+| Use case | Starting points | Feature packs, asset collections |
+
+## Full Package.json Examples
+
+<Tabs>
+  <Tab title="Asset Pack">
+    ```json
+    {
+        "name": "Fantasy UI Elements",
+        "author": "Polyphase Team",
+        "description": "A collection of medieval/fantasy themed UI elements including buttons, frames, icons, and fonts.",
+        "version": "1.0.0",
+        "updated": "2024-01-15",
+        "tags": ["UI", "fantasy", "medieval", "2D"]
+    }
+    ```
+
+    ```
+    fantasy-ui/
+        package.json
+        thumbnail.png
+        Assets/
+            Textures/
+                UI/
+                    btn_normal.png
+                    btn_hover.png
+                    btn_pressed.png
+                    frame_gold.png
+                    icons/
+                        sword.png
+                        shield.png
+            Fonts/
+                medieval.ttf
+    ```
+  </Tab>
+  <Tab title="Script Addon">
+    ```json
+    {
+        "name": "Save System",
+        "author": "Polyphase Team",
+        "description": "A flexible save/load system supporting multiple save slots, auto-save, and cloud sync hooks.",
+        "url": "https://github.com/polyphase-engine/addon-save-system",
+        "version": "2.0.0",
+        "updated": "2024-03-20",
+        "tags": ["utility", "save", "persistence"]
+    }
+    ```
+
+    ```
+    save-system/
+        package.json
+        thumbnail.png
+        Scripts/
+            SaveSystem/
+                SaveManager.lua
+                SaveSlot.lua
+                Serializer.lua
+                CloudSync.lua
+    ```
+  </Tab>
+</Tabs>
+
+## Creating Addon Repositories
+
+A repository is a GitHub repo that lists multiple addons from a single URL, letting you share a collection from one place.
+
+### Repository Structure
+
+```
+polyphase-addons/         (repository root)
+    package.json          # Lists all addons
+    particle-effects/
+        package.json
+        thumbnail.png
+        Assets/
+        Scripts/
+    ui-kit/
+        package.json
+        thumbnail.png
+        Assets/
+    save-system/
+        package.json
+        thumbnail.png
+        Scripts/
+```
+
+### Root package.json
+
+The root `package.json` must include a top-level `addons` array. Each entry must match a subdirectory name in the repository:
+
+```json
+{
+    "name": "Official Polyphase Addons",
+    "addons": [
+        "particle-effects",
+        "ui-kit",
+        "save-system",
+        "audio-manager",
+        "dialogue-system"
+    ]
+}
+```
+
+When a user adds your repository URL, the editor:
+1. Fetches the root `package.json`
+2. Reads the `addons` array
+3. Fetches each addon's `package.json` for metadata
+4. Displays all addons in the Browse tab
+
+### How Distribution Works
+
+<CardGroup cols={2}>
+  <Card title="Single Addon" icon="box">
+    Create a GitHub repository with `package.json` in the root. Share the repository URL directly — users add it as a single-addon repository.
+
+    Example URL: `https://github.com/yourname/particle-effects`
+  </Card>
+  <Card title="Addon Collection" icon="boxes-stacked">
+    Create a GitHub repository with a root `package.json` listing all addon subdirectory names. Users get access to every addon in the collection from one URL.
+
+    Example URL: `https://github.com/yourname/polyphase-addons`
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+<Accordion title="For Addon Creators">
+  - **Avoid naming conflicts** — use unique prefixes for asset and script file names (e.g., `MyAddon_PlayerController.lua`) to prevent collisions when merged into another project.
+  - **Document dependencies** — if your addon requires other addons or specific engine features, describe them clearly in the `description` field.
+  - **Include a README** — explain how to use the addon's features after installation.
+  - **Version properly** — increment the `version` field when making changes so users can see updates in the Installed tab.
+  - **Test in fresh projects** — install your addon into a new empty project to confirm it merges cleanly.
+</Accordion>
+
+<Accordion title="For Repository Maintainers">
+  - **Organize by category** — group related addons under logical subdirectory names.
+  - **Keep descriptions accurate** — the description is what users read before downloading.
+  - **Update the `addons` array** when adding or removing addon subdirectories.
+  - **Use clear directory names** — the subdirectory name becomes the addon's ID in the tracking file.
+</Accordion>

@@ -1,0 +1,708 @@
+---
+title: "Engine & System Lua API — Polyphase Engine"
+sidebarTitle: "Engine"
+description: "Core engine lifecycle, timing, save data, assets, scripts, and platform utilities exposed to Lua in Polyphase Engine."
+---
+
+The `Engine`, `System`, `AssetManager`, and `Script` globals give Lua scripts direct access to engine lifecycle control, real-time clocks, platform services, save-file I/O, asset loading, and Lua module management. These are the foundational APIs you will reach for in almost every script.
+
+---
+
+## Engine
+
+The `Engine` global handles application lifecycle, timing, pausing, time dilation, debug utilities, and platform queries.
+
+### Engine.Quit
+
+```lua
+Engine.Quit()
+```
+
+Closes the application immediately. Use this to exit the game from a quit button or fatal error handler.
+
+---
+
+### Engine.IsShuttingDown
+
+```lua
+shuttingDown = Engine.IsShuttingDown()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `shuttingDown` | `boolean` | `true` while the engine is in the process of quitting |
+
+---
+
+### Engine.GetWorld
+
+```lua
+world = Engine.GetWorld(index)
+```
+
+Returns the `World` object at the given index. On most platforms only world `1` exists. On 3DS, world `1` is the top screen and world `2` is the bottom screen.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `index` | `integer` | `1` | World index |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `world` | `World` | The requested world |
+
+```lua
+local world = Engine.GetWorld()
+local player = world:FindNode("Player")
+```
+
+---
+
+### Engine.GetTime
+
+```lua
+time = Engine.GetTime()
+```
+
+Returns the total real elapsed time in seconds since the game started.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `time` | `number` | Seconds since game start |
+
+---
+
+### Engine.GetGameDeltaTime
+
+```lua
+deltaTime = Engine.GetGameDeltaTime()
+```
+
+Returns the frame delta time in seconds, respecting time dilation and pausing. **Alias:** `Engine.GetDeltaTime`.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `deltaTime` | `number` | Game delta time in seconds |
+
+<Note>
+Use `GetGameDeltaTime` (not `GetRealDeltaTime`) for gameplay movement and physics so that pausing and slow-motion work correctly.
+</Note>
+
+---
+
+### Engine.GetRealDeltaTime
+
+```lua
+deltaTime = Engine.GetRealDeltaTime()
+```
+
+Returns the raw frame delta time in seconds, ignoring time dilation and pausing.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `deltaTime` | `number` | Real delta time in seconds |
+
+---
+
+### Engine.GetGameElapsedTime
+
+```lua
+time = Engine.GetGameElapsedTime()
+```
+
+Returns elapsed game time in seconds, respecting time dilation and pausing. **Alias:** `Engine.GetElapsedTime`.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `time` | `number` | Game-time elapsed in seconds |
+
+---
+
+### Engine.GetRealElapsedTime
+
+```lua
+time = Engine.GetRealElapsedTime()
+```
+
+Returns total wall-clock time elapsed in seconds since game start, ignoring dilation and pausing.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `time` | `number` | Real elapsed time in seconds |
+
+---
+
+### Engine.GetPlatform
+
+```lua
+platform = Engine.GetPlatform()
+```
+
+Returns a string naming the current platform.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `platform` | `string` | e.g. `"Windows"`, `"3DS"`, `"GameCube"` |
+
+```lua
+if Engine.GetPlatform() == "3DS" then
+    -- adjust layout for dual screens
+end
+```
+
+---
+
+### Engine.IsEditor
+
+```lua
+editor = Engine.IsEditor()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `editor` | `boolean` | `true` when running inside the editor |
+
+---
+
+### Engine.IsPlayingInEditor
+
+```lua
+pie = Engine.IsPlayingInEditor()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `pie` | `boolean` | `true` during Play-In-Editor sessions |
+
+---
+
+### Engine.IsPlaying
+
+```lua
+playing = Engine.IsPlaying()
+```
+
+Returns `true` whether running in a packaged game or during PIE.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `playing` | `boolean` | `true` if in a play session |
+
+---
+
+### Engine.SetPaused
+
+```lua
+Engine.SetPaused(pause)
+```
+
+Pauses or unpauses the game. Paused state is respected by `GetGameDeltaTime` and `GetGameElapsedTime`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `pause` | `boolean` | `true` to pause, `false` to unpause |
+
+---
+
+### Engine.IsPaused
+
+```lua
+paused = Engine.IsPaused()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `paused` | `boolean` | Whether the game is currently paused |
+
+---
+
+### Engine.FrameStep
+
+```lua
+Engine.FrameStep()
+```
+
+Advances exactly one frame forward while the game is paused. Useful for step-debugging gameplay without fully unpausing.
+
+---
+
+### Engine.SetTimeDilation
+
+```lua
+Engine.SetTimeDilation(dilation)
+```
+
+Sets the global time dilation multiplier. A value of `1.0` is normal speed, `0.5` is half speed, `2.0` is double speed.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `dilation` | `number` | Time dilation factor |
+
+---
+
+### Engine.GetTimeDilation
+
+```lua
+dilation = Engine.GetTimeDilation()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `dilation` | `number` | Current time dilation factor |
+
+```lua
+-- Bullet-time effect
+Engine.SetTimeDilation(0.2)
+TimerManager.SetTimer(function()
+    Engine.SetTimeDilation(1.0)
+end, 3.0)
+```
+
+---
+
+### Engine.Break
+
+```lua
+Engine.Break()
+```
+
+Breaks into the attached debugger. Has no effect in shipping builds.
+
+---
+
+### Engine.Alert
+
+```lua
+Engine.Alert(msg)
+```
+
+Pops a platform alert / message box. Useful for surfacing unexpected states during development.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `msg` | `string` | Message to display |
+
+---
+
+### Engine.SetBreakOnScriptError
+
+```lua
+Engine.SetBreakOnScriptError(break)
+```
+
+When enabled, the debugger will break automatically on any Lua error.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `break` | `boolean` | Enable automatic break on Lua error |
+
+---
+
+### Engine.ReloadAllScripts
+
+```lua
+Engine.ReloadAllScripts(restartScripts)
+```
+
+Reloads every Lua script. Useful during editor hot-reloading workflows.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `restartScripts` | `boolean` | `true` | Whether to restart currently running scripts |
+
+---
+
+### Engine.GarbageCollect
+
+```lua
+Engine.GarbageCollect()
+```
+
+Runs both the Lua garbage collector and an asset reference sweep. This operation is slow and may cause a frame hitch — prefer calling it during loading screens or scene transitions.
+
+<Warning>
+`Engine.GarbageCollect()` is expensive. Avoid calling it every frame.
+</Warning>
+
+---
+
+## System
+
+The `System` global provides platform-level utilities: save-file I/O, screen orientation, window management, and memory-card control.
+
+### System.WriteSave
+
+```lua
+System.WriteSave(name, stream)
+```
+
+Writes a `Stream` of bytes to a named save file.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Save file name |
+| `stream` | `Stream` | Byte stream to write (create with `Stream.Create()`) |
+
+---
+
+### System.ReadSave
+
+```lua
+System.ReadSave(name, stream)
+```
+
+Reads a named save file into a `Stream`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Save file name |
+| `stream` | `Stream` | Stream to fill with save data |
+
+```lua
+local stream = Stream.Create()
+if System.DoesSaveExist("slot1") then
+    System.ReadSave("slot1", stream)
+    -- deserialize from stream...
+end
+```
+
+---
+
+### System.DoesSaveExist
+
+```lua
+exists = System.DoesSaveExist(name)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Save file name |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `exists` | `boolean` | Whether the save file exists |
+
+---
+
+### System.DeleteSave
+
+```lua
+System.DeleteSave(name)
+```
+
+Permanently deletes the named save file.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Save file name |
+
+---
+
+### System.UnmountMemoryCard
+
+```lua
+System.UnmountMemoryCard()
+```
+
+Unmounts the memory card. Polyphase currently uses only the first memory card.
+
+---
+
+### System.SetScreenOrientation
+
+```lua
+System.SetScreenOrientation(orientation)
+```
+
+Sets the screen orientation. Only applies on Android. See the `ScreenOrientation` enum for valid values.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `orientation` | `ScreenOrientation (integer)` | Target orientation |
+
+---
+
+### System.GetScreenOrientation
+
+```lua
+orientation = System.GetScreenOrientation()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `orientation` | `ScreenOrientation (integer)` | Current screen orientation |
+
+---
+
+### System.SetFullscreen
+
+```lua
+System.SetFullscreen(fullscreen)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `fullscreen` | `boolean` | Enable or disable fullscreen |
+
+---
+
+### System.IsFullscreen
+
+```lua
+fullscreen = System.IsFullscreen()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `fullscreen` | `boolean` | Whether fullscreen is currently active |
+
+---
+
+### System.SetWindowTitle
+
+```lua
+System.SetWindowTitle(title)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `title` | `string` | New window title |
+
+---
+
+## AssetManager
+
+`AssetManager` loads, unloads, and tracks game assets. Several functions are also available as bare globals — e.g. `LoadAsset(name)` is equivalent to `AssetManager.LoadAsset(name)`.
+
+### AssetManager.LoadAsset
+
+```lua
+asset = AssetManager.LoadAsset(name)
+```
+
+Synchronously loads and returns an asset by name.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Asset name |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `asset` | `Asset` | The loaded asset |
+
+```lua
+local explosion = AssetManager.LoadAsset("PS_Explosion")
+-- or using the global alias:
+local explosion = LoadAsset("PS_Explosion")
+```
+
+---
+
+### AssetManager.GetAsset
+
+```lua
+asset = AssetManager.GetAsset(name)
+```
+
+Returns a previously loaded asset without triggering a load. Returns `nil` if the asset has not been loaded yet.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Asset name |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `asset` | `Asset` | The asset, or `nil` |
+
+---
+
+### AssetManager.AsyncLoadAsset
+
+```lua
+asset = AssetManager.AsyncLoadAsset(name)
+```
+
+Requests an asynchronous load and returns a handle immediately. Poll `asset:IsLoaded()` to check completion.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Asset name |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `asset` | `Asset` | Pending asset handle |
+
+```lua
+local handle = AssetManager.AsyncLoadAsset("T_HugeTexture")
+
+function MyNode:Tick(dt)
+    if handle:IsLoaded() then
+        self.sprite:SetTexture(handle)
+    end
+end
+```
+
+---
+
+### AssetManager.UnloadAsset
+
+```lua
+AssetManager.UnloadAsset(name)
+```
+
+Unloads an unreferenced asset from memory.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Asset name |
+
+---
+
+### AssetManager.RefSweep
+
+```lua
+AssetManager.RefSweep()
+```
+
+Scans for and unloads all assets that have no remaining references. Less aggressive than `Engine.GarbageCollect()`.
+
+---
+
+### AssetManager.SaveAsset
+
+```lua
+AssetManager.SaveAsset(name)
+```
+
+Saves an asset to disk. Only available in Editor builds.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Asset name |
+
+---
+
+### AssetManager.CreateAndRegisterAsset
+
+```lua
+asset = AssetManager.CreateAndRegisterAsset(typeName, path, name)
+```
+
+Creates a new asset of the given type, registers it, and returns it. Only meaningful in Editor contexts.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `typeName` | `string` | Type name, e.g. `"MaterialLite"` |
+| `path` | `string` | Filesystem path where the asset should be saved |
+| `name` | `string` | Name for the new asset |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `asset` | `Asset` | The newly created asset |
+
+---
+
+## Script
+
+`Script` manages Lua module loading, class inheritance, and the Lua garbage collector.
+
+### Script.Load
+
+```lua
+Script.Load(path)
+```
+
+Loads a Lua script file relative to the `Scripts/` directory. If the file has already been loaded it will not be loaded again. The `.lua` extension is optional. **Alias:** `Script.Require`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `path` | `string` | Script path relative to `Scripts/` |
+
+```lua
+Script.Load("Enemies/Goblin")   -- loads Scripts/Enemies/Goblin.lua
+```
+
+---
+
+### Script.Run
+
+```lua
+Script.Run(path)
+```
+
+Like `Script.Load` but always executes the file, even if it was loaded before. Useful for running editor utility scripts.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `path` | `string` | Script path relative to `Scripts/` |
+
+---
+
+### Script.LoadDirectory
+
+```lua
+Script.LoadDirectory(dirPath, recurse)
+```
+
+Loads every Lua script in a directory (skipping already-loaded files).
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `dirPath` | `string` | — | Directory path |
+| `recurse` | `boolean` | `true` | Whether to recurse into sub-directories |
+
+```lua
+Script.LoadDirectory("UI")  -- loads all scripts under Scripts/UI/
+```
+
+---
+
+### Script.Inherit
+
+```lua
+Script.Inherit(childTable, parentTable)
+```
+
+Sets up prototype-based inheritance from `parentTable` to `childTable`. **Alias:** `Script.Extend`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `childTable` | `table` | The new class table |
+| `parentTable` | `table` | The base class table |
+
+```lua
+Script.Load("Monster")       -- ensure parent is loaded
+Goblin = {}
+Script.Inherit(Goblin, Monster)
+
+function Goblin:Attack()
+    -- override Monster:Attack
+end
+```
+
+---
+
+### Script.New
+
+```lua
+inst = Script.New(parent)
+```
+
+Creates and returns a new table that inherits from `parent`. Equivalent to instantiating a class.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `parent` | `table` | Parent class table |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `inst` | `table` | New instance table |
+
+---
+
+### Script.GarbageCollect
+
+```lua
+Script.GarbageCollect()
+```
+
+Runs the Lua garbage collector. Use `Engine.GarbageCollect()` if you also want to sweep unreferenced engine assets.

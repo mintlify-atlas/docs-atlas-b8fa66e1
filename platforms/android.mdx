@@ -1,0 +1,175 @@
+---
+title: "Building and Debugging for Android with Polyphase Engine"
+sidebarTitle: "Android"
+description: "Package Polyphase Engine games as Android APKs using Android Studio, NDK 25.2, and CMake 3.22.1, with adb logcat for live debugging on device."
+---
+
+Polyphase Engine targets Android via a **CMake + Gradle + NDK** build pipeline managed by Android Studio. The engine runtime is compiled as a shared native library linked into the APK, and all Lua scripts are embedded at package time when Embedded Mode is enabled. Debugging on device is done with `adb logcat`, which captures all `LogDebug`, `LogWarning`, and `LogError` output under the `Polyphase` tag.
+
+## Requirements
+
+Before packaging for Android, install the following components through Android Studio's SDK Manager:
+
+| Component | Required Version |
+|-----------|-----------------|
+| Android Studio | 2022.2.1 Patch 2 or newer |
+| Android SDK Build Tools | **34.0.0** |
+| Android NDK (Side by side) | **25.2.9519653** |
+| CMake | **3.22.1** |
+
+<Steps>
+  <Step title="Install Android Studio">
+    Download Android Studio from [developer.android.com/studio](https://developer.android.com/studio).
+  </Step>
+  <Step title="Open the SDK Manager">
+    In Android Studio, go to **Tools → SDK Manager → SDK Tools** and tick the three required components listed above.
+  </Step>
+  <Step title="Verify your installation">
+    Confirm the SDK Manager shows the exact versions above. The build.gradle file pins `cmake { version '3.22.1' }` and uses `ndk { abiFilters "arm64-v8a" }`, so version mismatches will fail the CMake configure step.
+  </Step>
+</Steps>
+
+## APK Build Process
+
+Packaging for Android is triggered from the editor:
+
+<Steps>
+  <Step title="Open the Packaging window">
+    Go to **File → Package Project**.
+  </Step>
+  <Step title="Select or create an Android build profile">
+    Set **Platform** to **Android**. Enable **Embedded Mode** to bake Lua scripts into the APK binary.
+  </Step>
+  <Step title="Click Build">
+    The editor invokes the Android NDK CMake pass, which compiles the engine runtime from source. The resulting APK is placed in `Packaged/Android/Polyphase.apk`.
+  </Step>
+  <Step title="Install and run">
+    ```bash
+    adb install -r Packaged/Android/Polyphase.apk
+    adb shell am start -n com.your.applicationid/.PolyphaseActivity
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  Engine source, Lua scripts, and native addon C++ are all recompiled from scratch by the NDK/CMake pass on every **Package → Android**. Only editor-only code (anything under `#if EDITOR`) needs the editor itself to be rebuilt. With **Embedded Mode** on, editing a `.lua` file requires repackaging and reinstalling — there is no hot-reload into an installed APK.
+</Note>
+
+## APK Structure
+
+The Gradle project lives at `Standalone/Android/`. Key configuration:
+
+| Setting | Value |
+|---------|-------|
+| `minSdk` | 24 (Android 7.0) |
+| `targetSdk` | 33 (Android 13) |
+| `compileSdk` | 33 |
+| ABI filter | `arm64-v8a` |
+| CMake version | `3.22.1` |
+| CMakeLists.txt | `app/src/main/cpp/CMakeLists.txt` |
+| Output APK name | `Polyphase.apk` |
+
+## Debugging on Device
+
+### Live Logs with adb logcat
+
+Every `LogDebug`, `LogWarning`, and `LogError` call is routed to Android's system log under the tag `Polyphase`. Start a filtered logcat session before launching the app:
+
+```bash
+adb logcat -s Polyphase:V
+```
+
+Leave it running while you reproduce the problem — a capture taken only at launch usually misses the interesting part.
+
+<Warning>
+  Two things silence logcat output:
+  1. `Config.ini` must have `Logging=1`. With `Logging=0`, every `Log*` call returns immediately and nothing reaches logcat or the log file.
+  2. Settings changed in App Settings only take effect in the **next package**. Toggling `Log To File` does not alter an APK already installed on the device.
+</Warning>
+
+### Log File Location
+
+Unlike desktop, there is no writable current directory for an Android NativeActivity. The log file is written to the app's private internal storage:
+
+```bash
+adb shell run-as com.your.applicationid cat files/MyGame.log
+```
+
+Prefer `adb logcat` for live debugging. The log file is useful for post-mortem analysis of crashes that happen before logcat is attached.
+
+## Common Issues
+
+<Accordion title="Parts of the UI are missing — black bands or offset UI">
+  **Cause:** The scene has no `Camera3D`. A UI-only scene with no camera renders its widgets offset and leaves large regions unpainted. This is most visible on Android; desktop can mask it.
+
+  **Fix:** Add a `Camera3D` to every scene, even scenes with no 3D content. The engine now spawns a transient fallback camera automatically and logs:
+
+  ```
+  World: scene '<name>' has no Camera3D -- using a transient fallback camera.
+  ```
+
+  The fallback sits at `(0, 0, 10)` with default settings, which is unlikely to be the framing you want. Add a real `Camera3D` and configure it for your scene.
+</Accordion>
+
+<Accordion title="A runtime-generated texture renders black on Android but works on Windows">
+  Applies to a texture created, uploaded once, and displayed — as opposed to a live feed that re-uploads every frame. On slower mobile GPUs, the texture can be sampled before the initial GPU upload has completed, and since there is no subsequent upload to correct it, the texture stays black.
+
+  The engine now waits for the initial `Texture::Create()` upload. If you see this on an older build, update the engine. If it persists, verify the source pixels are actually non-black before the upload.
+</Accordion>
+
+<Accordion title="A native addon behaves as if its platform code is missing on Android">
+  The `nativePerPlatform` block is matched by a **case-sensitive** key. The Android section must be spelled exactly `"Android"`.
+
+  To confirm what the Android build received, package for Android and check `Standalone/Generated/AddonInject.cmake` — `POLYPHASE_ADDON_DEFINES` and `POLYPHASE_ADDON_LIBS` should contain your entries. If they are empty, the per-platform block never applied.
+
+  Also note: `POLYPHASE_ADDON_LIBS` feeds CMake's `target_link_libraries` directly — list bare library names (e.g., `camera2ndk`), not `-l`-prefixed flags.
+
+  ```json
+  {
+      "nativePerPlatform": {
+          "Android": {
+              "extraLibs": ["camera2ndk", "mediandk"]
+          }
+      }
+  }
+  ```
+</Accordion>
+
+<Accordion title="An Android feature needs a runtime permission">
+  Android permissions can only be requested from the Java `Activity`, and the response is asynchronous. The engine's pattern is:
+
+  1. Declare `<uses-permission>` in `Standalone/Android/app/src/main/AndroidManifest.xml`
+  2. Add `has*Permission()` / `request*Permission()` methods to `PolyphaseActivity.java`
+  3. Call them over JNI from native code
+  4. **Poll, don't block** — fire the request once, return failure, and retry later
+
+  If a permission dialog never appears, check that the permission is requested from every entry point that needs it. Some devices return empty results from enumeration APIs until permission is granted.
+</Accordion>
+
+<Accordion title="Which changes require the editor to be rebuilt before packaging?">
+  Only **editor-only** code — anything under `#if EDITOR`, such as `ActionManager.cpp`. Ordinary engine source (including the Vulkan renderer), Lua scripts, and native addon C++ are all recompiled from scratch by the NDK/CMake pass on every **Package → Android**. An engine runtime fix needs only a repackage, not an editor rebuild.
+</Accordion>
+
+## Platform-Specific Code in Native Addons
+
+Use the `PLATFORM_ANDROID` preprocessor define to gate Android-specific code:
+
+```cpp
+#if PLATFORM_ANDROID
+    // Android-only path
+    // Use JNI here for Java interop
+#endif
+```
+
+Per-platform `package.json` entries use the key `"Android"` (case-sensitive):
+
+```json
+{
+    "nativePerPlatform": {
+        "Android": {
+            "extraDefines": ["MY_ADDON_ANDROID=1"],
+            "extraLibs": ["android", "log"]
+        }
+    }
+}
+```

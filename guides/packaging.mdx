@@ -1,0 +1,215 @@
+---
+title: "Packaging and Build Profiles in Polyphase"
+sidebarTitle: "Packaging"
+description: "Learn how to create build profiles for every Polyphase platform, configure embedded assets, run the packaging pipeline, and invoke headless CLI builds."
+---
+
+Packaging in Polyphase is the process of cooking assets, compiling shaders, generating an asset registry, and linking or compiling the game executable into a self-contained deliverable. Build profiles save your packaging configuration per platform so you can switch targets and build with a single click. Profiles travel with the project in `Settings/BuildProfiles.json`, so every team member shares the same build setup.
+
+## Opening the Packaging Window
+
+Go to **File > Build Profiles** to open the Packaging window. The left side lists all saved profiles; the right side shows settings for the selected profile.
+
+---
+
+## Creating a Build Profile
+
+<Steps>
+  <Step title="Add a new profile">
+    Click the **+** button in the Build Profiles list. Give your profile a descriptive name such as `Wii Release` or `Windows Debug`.
+  </Step>
+  <Step title="Select the target platform">
+    In the **Platform** dropdown, choose the target: **Windows**, **Linux**, **GameCube**, **Wii**, **3DS**, or **Android**.
+  </Step>
+  <Step title="Configure Embedded Mode">
+    Enable **Embedded Mode** to bake all assets directly into the executable. This is **required** for console platforms (GameCube, Wii, 3DS) that cannot load from a loose filesystem.
+
+    On 3DS, "embedded" actually routes content through **romfs** (read-only filesystem) rather than compiling it into the binary — loose files are still the delivery mechanism, just inside the romfs image rather than as loose files in the package directory.
+  </Step>
+  <Step title="Configure optional settings">
+    - **Output Directory** — Leave empty to use the default `{ProjectDir}/Packaged/{Platform}/`, or set a custom path.
+    - **Static Content** — Obfuscates cooked `.oct` assets, scripts, and `AssetRegistry.txt` in place.
+    - **Content Pak** — Requires Static Content. Packs everything into a single `Content.pak` file and deletes the loose originals.
+    - **Use Docker** — Forces a Docker-based build. On Windows, Docker is used **automatically** for GameCube, Wii, and 3DS targets.
+  </Step>
+  <Step title="Save and build">
+    Click **Build** to package, or **Build & Run** to package and immediately launch in an emulator.
+  </Step>
+</Steps>
+
+---
+
+## Platform-Specific Notes
+
+### Windows
+
+Compilation uses Visual Studio: `devenv Polyphase.sln /Build "Release|x64" /Project {ProjectName}`. The output is a `.exe` in `Packaged/Windows/`. Vulkan SPIR-V shaders are compiled with `compile.bat` and copied alongside the executable.
+
+### Linux
+
+Built via `make`. Debug symbols are stripped after linking. Output is a `.elf` in `Packaged/Linux/`. Shaders are compiled with `compile.sh`.
+
+### GameCube
+
+Requires the **devkitPro** toolchain (PPC). On Windows, the build runs inside Docker automatically. Output is a `.dol` in `Packaged/GCN/`. All assets must use **Embedded Mode**.
+
+### Wii
+
+Same devkitPro toolchain as GameCube (also PPC). Docker is required on Windows. Output is a `.dol` in `Packaged/Wii/`. Wiimote, Nunchuk, Classic Controller, and GameCube controller inputs are all supported at runtime.
+
+### Nintendo 3DS
+
+Uses the devkitPro ARM toolchain. Two built-in targets are available:
+
+| Target | Output | Use |
+|---|---|---|
+| Nintendo 3DS | `Packaged/N3DS/{Project}.3dsx` | Homebrew Launcher / 3dslink / Azahar emulator |
+| Nintendo 3DS (CIA) | `.3dsx` + `.cia` | Installable HOME Menu title via FBI or Azahar |
+
+Both targets show a **3DS Target Options** block for SMDH metadata (title, description, author, 48×48 icon). The CIA target adds a product code, unique ID, version, optional custom RSF, and HOME Menu banner settings.
+
+### Android
+
+Built with Gradle: `./gradlew assembleRelease`. Assets are copied to `Android/app/src/main/assets/` before the build. Output is an `.apk` in `Android/app/build/outputs/apk/release/`.
+
+<Warning>
+On Android, changes to scripts and assets require a full repackage and reinstall — there is no hot-reload into an already-installed APK when Embedded Mode is enabled.
+</Warning>
+
+---
+
+## The Packaging Flow
+
+When you click **Build**, the engine runs `ActionManager::BuildData()`. The steps below describe what happens in order.
+
+<Steps>
+  <Step title="Gather engine state and paths">
+    The packager resolves the Polyphase installation directory, project directory, project name, and target platform. A fresh `{ProjectDir}/Packaged/{Platform}/` directory is created (deleting any previous output for that platform).
+  </Step>
+  <Step title="Cook assets">
+    Every asset in both the Engine and Project `Assets/` directories is loaded, cooked to a platform-specific `.oct` file, and written to the packaged directory. Assets that were not already loaded are unloaded again after cooking to keep memory usage low.
+
+    - Engine assets → `{PackagedDir}/Engine/{path}/`
+    - Project assets → `{PackagedDir}/{ProjectName}/{path}/`
+  </Step>
+  <Step title="Generate the Asset Registry">
+    An `AssetRegistry.txt` file is written to `{PackagedDir}/{ProjectName}/`. It lists every cooked asset's type and path and is used by the runtime to discover assets without filesystem enumeration — critical on platforms like GameCube and 3DS.
+
+    ```
+    StaticMesh,SM_Crate
+    Texture,T_Grass
+    Scene,SC_Level1
+    ```
+  </Step>
+  <Step title="Generate embedded file headers">
+    When Embedded Mode is active (and not on 3DS romfs), the packager generates:
+    - `{ProjectDir}/Generated/EmbeddedAssets.h` / `.cpp`
+    - `{ProjectDir}/Generated/EmbeddedScripts.h` / `.cpp`
+
+    These C++ source files contain the cooked asset bytes as compile-time arrays. They are then copied to the `Standalone/` directory for inclusion in the build.
+  </Step>
+  <Step title="Copy or embed scripts">
+    In non-embedded mode, script files are copied to the packaged directory:
+    - Engine scripts → `{PackagedDir}/Engine/Scripts/`
+    - Project scripts → `{PackagedDir}/{ProjectName}/Scripts/`
+
+    The `LuaPanda.lua` debugger script is stripped from non-desktop builds to save ~148 KB.
+  </Step>
+  <Step title="Copy project files">
+    The `{ProjectName}.octp` project file and `Config.ini` are copied to the packaged directory.
+  </Step>
+  <Step title="Platform-specific tasks (shaders, static content, romfs)">
+    - **Vulkan platforms** (Windows, Linux, macOS, Android): SPIR-V shaders are compiled and placed in `{PackagedDir}/Engine/Shaders/GLSL/bin/`.
+    - **Static Content / Content Pak**: If enabled, cooked files are obfuscated in place, then optionally folded into `Content.pak`. This step runs **after** embedded generation so that the generators encode their own copies correctly.
+    - **3DS romfs**: All packaged content is copied to the romfs intermediate directory for inclusion in the 3dsx/CIA image.
+  </Step>
+  <Step title="Compile the executable">
+    The compilation step varies by platform. In editor (non-headless) mode, if a pre-built binary already exists it is reused to avoid a full recompile. In headless (CI) mode, a full compile always runs.
+
+    | Platform | Build command |
+    |---|---|
+    | Windows | `devenv Polyphase.sln /Build "Release|x64"` |
+    | Linux | `make -f Makefile_TEMP -j 12` + `strip --strip-debug` |
+    | macOS | `make -f Makefile_TEMP -j 12` + app bundle via `MacBundlePackager` |
+    | Android | `./gradlew assembleRelease` |
+    | GameCube / Wii / 3DS | `make -f Makefile_TEMP -j 12` (devkitPro) |
+  </Step>
+  <Step title="Copy executable to packaged directory">
+    The freshly built (or reused) binary is copied to the packaged output directory and renamed to the project name.
+  </Step>
+</Steps>
+
+---
+
+## Build Output Paths
+
+| Platform | Output path | Extension |
+|---|---|---|
+| Windows | `Packaged/Windows/` | `.exe` |
+| Linux | `Packaged/Linux/` | `.elf` |
+| macOS | `Packaged/Mac/` | `.app` |
+| Android | `Packaged/Android/` | `.apk` |
+| GameCube | `Packaged/GCN/` | `.dol` |
+| Wii | `Packaged/Wii/` | `.dol` |
+| Nintendo 3DS | `Packaged/N3DS/` | `.3dsx` |
+| Nintendo 3DS (CIA) | `Packaged/polyphase.n3ds.cia/` | `.3dsx` + `.cia` |
+
+---
+
+## Build & Run (Emulators)
+
+Click **Build & Run** to package and launch immediately. Configure emulator paths in **Preferences > External > Launchers**.
+
+| Platform | Emulator |
+|---|---|
+| GameCube | Dolphin |
+| Wii | Dolphin |
+| 3DS | Azahar or Citra |
+
+You can customize launch arguments using placeholders:
+
+```bash
+# Dolphin full-screen
+{emulator} -e {output} -f
+
+# Dolphin with debugger
+{emulator} -e {output} -d
+```
+
+To send a 3DS build directly to hardware, set the **3dslink Path** in Preferences, select **Hardware** as the 3DS launch method, and ensure the Homebrew Launcher is open on your console before clicking **Build & Run**.
+
+---
+
+## Headless CLI Build
+
+For CI/CD pipelines, run the Polyphase editor in headless mode. Both the `-headless` flag **and** a valid `-project` path are required for headless mode to activate.
+
+```bash
+# Package a project for Linux in headless mode
+./Polyphase -headless -project /path/to/MyGame/MyGame.octp -platform Linux
+
+# Package for Wii
+./Polyphase -headless -project /path/to/MyGame/MyGame.octp -platform Wii
+```
+
+In headless mode the compiler step **always runs** — there is no reuse of existing binaries. This guarantees a fresh, reproducible build on every CI invocation.
+
+<Note>
+Build profiles are saved to `{ProjectDir}/Settings/BuildProfiles.json` and travel with the project. Emulator paths are saved per-user in global preferences and are not committed to the project repository.
+</Note>
+
+---
+
+## Docker Builds (Windows)
+
+On Windows, GameCube, Wii, and 3DS builds require the devkitPro toolchain, which runs inside a Docker container automatically.
+
+| Host OS | Platform | Docker used |
+|---|---|---|
+| Windows | GameCube | Yes (automatic) |
+| Windows | Wii | Yes (automatic) |
+| Windows | 3DS | Yes (automatic) |
+| Windows | Windows | No |
+| Linux | Any | Optional (checkbox) |
+
+Docker Desktop must be installed and running before starting a console build on Windows. If you see `"Docker Desktop is not running"`, launch Docker Desktop and wait for it to fully start before retrying.

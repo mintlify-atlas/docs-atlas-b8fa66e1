@@ -1,0 +1,429 @@
+---
+title: "Node Graph: Visual Programming for All Domains"
+sidebarTitle: "Node Graph"
+description: "Polyphase node graph: 6 domains, topological evaluation, 6 DatumTypes, NodeGraphPlayer runtime, and how to create custom nodes and domain types in C++."
+---
+
+The Polyphase node graph system provides a visual programming interface for connecting data-producing nodes to data-consuming nodes across six specialized domains. The core runtime is entirely domain-agnostic — a single `GraphProcessor` handles topological sort and evaluation for every graph type. Domain classes plug into that core to declare available node types, a default output node, and a callback that reads computed results after each evaluation.
+
+## Architecture
+
+```
+NodeGraphAsset
+└── NodeGraph
+     ├── GraphNode (Source) ──pins──> GraphNode (Process) ──pins──> GraphNode (Output/Sink)
+     └── GraphLink (output pin → input pin, type-compatible)
+
+Domain:  "Material" | "Shader" | "Procedural" | "Animation" | "FSM" | "SceneGraph"
+```
+
+<CardGroup cols={2}>
+  <Card title="GraphNode" icon="circle-nodes">
+    Base class for every node. Declares input/output pins in `SetupPins()` and computes output values in `Evaluate()`. Each node has a type name, category, and color.
+  </Card>
+  <Card title="GraphPin" icon="plug">
+    A connection point on a node. Has a unique ID, name, `DatumType`, direction (Input/Output), and a default + current value. Input pins accept one incoming link; output pins fan out to multiple.
+  </Card>
+  <Card title="GraphLink" icon="arrow-right-arrow-left">
+    Connects an output pin to an input pin. Validated for type compatibility at creation time. `Float ↔ Integer` and `Vector ↔ Color` cross-type conversions are supported.
+  </Card>
+  <Card title="NodeGraph" icon="diagram-project">
+    Container for nodes and links. Manages CRUD operations, link creation with cycle detection, and serialization (save/load via streams). Carries a domain name string.
+  </Card>
+  <Card title="GraphDomain" icon="grid">
+    Abstract base class defining a graph context. Declares available node types in `RegisterNodeTypes()`, specifies a default output node via `GetDefaultOutputNodeType()`, and receives `OnGraphEvaluated()` after each evaluation to push results into the engine system.
+  </Card>
+  <Card title="GraphProcessor" icon="gears">
+    Evaluates a node graph by running Kahn's topological sort, detecting cycles (evaluation aborts if any exist), and propagating values through links after each node's `Evaluate()` call.
+  </Card>
+</CardGroup>
+
+### Evaluation Flow
+
+```
+1. GraphProcessor::Evaluate(graph)
+2. TopologicalSort()  — Kahn's algorithm
+3. For each node in sorted order:
+   a. Reset input pins to default values
+   b. Propagate output values from connected upstream nodes
+   c. Call node->Evaluate()
+4. Domain->OnGraphEvaluated(graph)
+```
+
+Cycles cause evaluation to abort entirely — the `GraphProcessor` detects them during the topological sort and returns early with a diagnostic.
+
+### Serialization
+
+Node graphs are serialized as part of `NodeGraphAsset`:
+
+- Domain name string
+- All nodes (type ID, canvas position, pin data)
+- All links (output pin → input pin mapping)
+- ID counters for nodes, links, and pins
+
+---
+
+## Supported Data Types
+
+| DatumType | C++ Type | Compatible With |
+|---|---|---|
+| `Float` | `float` | `Integer` |
+| `Integer` | `int32_t` | `Float` |
+| `Bool` | `bool` | — |
+| `Vector` | `glm::vec3` | `Color` |
+| `Vector2D` | `glm::vec2` | — |
+| `Color` | `glm::vec4` (RGBA) | `Vector` |
+
+Cross-type links (`Float ↔ Integer`, `Vector ↔ Color`) are automatically converted at pin propagation time — you never need to insert explicit cast nodes.
+
+---
+
+## Graph Domains
+
+The engine ships with six domains. Each has a distinct color, a domain-specific node set, and a set of shared utility nodes (Math, Value, Viewer).
+
+<Tabs>
+  <Tab title="Material">
+    **Color:** Red `(0.7, 0.2, 0.2)` — **Output node:** `MaterialOutputNode`
+
+    Defines material properties for rendering. Connect texture samples, math operations, and value nodes to produce shading parameters.
+
+    | Node | Inputs | Outputs |
+    |---|---|---|
+    | Material Output | Base Color, Metallic, Roughness, Normal, Emissive, Opacity | — |
+    | Texture Sample | UV | Color, R, G, B, A |
+    | Fresnel | Exponent, Base Value | Result |
+    | Panner | UV, Speed X/Y, Time | UV |
+    | Normal Map | Normal, Strength | Result |
+
+    Also includes all Math nodes, all Value nodes, and Viewer.
+  </Tab>
+  <Tab title="Shader">
+    **Color:** Blue `(0.2, 0.4, 0.8)` — **Output node:** `ShaderOutputNode`
+
+    Defines custom shader logic with vertex and fragment stage parameters.
+
+    | Node | Outputs |
+    |---|---|
+    | Shader Output | — (sink: Color, Alpha, Vertex Offset, World Normal) |
+    | Vertex Position | Position |
+    | Vertex Normal | Normal |
+    | World Position | Position |
+
+    Also includes all Math nodes, all Value nodes, and Viewer.
+  </Tab>
+  <Tab title="Procedural">
+    **Color:** Orange `(0.8, 0.5, 0.1)` — **Output node:** `ProceduralOutputNode`
+
+    Procedural content generation for terrain, textures, and effects.
+
+    | Node | Inputs | Outputs |
+    |---|---|---|
+    | Procedural Output | Height, Density, Color, Mask | — |
+    | Noise | Position, Scale, Octaves | Value |
+    | Voronoi | Position, Scale | Distance, Cell ID |
+    | Gradient | Position, Start, End | Color |
+
+    Also includes all Math nodes, all Value nodes, and Viewer.
+  </Tab>
+  <Tab title="Animation">
+    **Color:** Green `(0.2, 0.7, 0.3)` — **Output node:** `AnimationOutputNode`
+
+    Defines animation blend trees and playback control.
+
+    | Node | Inputs | Outputs |
+    |---|---|---|
+    | Animation Output | Pose, Blend Weight, Speed | — |
+    | Anim Clip | — | Pose, Duration |
+    | Blend | Pose A, Pose B, Alpha | Result |
+    | Anim Speed | Speed, Time | Scaled Time |
+
+    Also includes Add, Subtract, Multiply, Divide, Lerp, Clamp, Float, Integer, Time, and Viewer.
+  </Tab>
+  <Tab title="FSM">
+    **Color:** Purple `(0.6, 0.2, 0.7)` — **Output node:** `FSMOutputNode`
+
+    Defines state machines with states, transitions, and conditions.
+
+    | Node | Inputs | Outputs |
+    |---|---|---|
+    | FSM Output | State ID, Transition | — |
+    | State | Enter | Active, State ID |
+    | Transition | Condition, From State, To State | Should Transition |
+    | Condition | Value A, Value B | Result (A > B) |
+
+    Also includes Float, Integer, and Viewer.
+  </Tab>
+  <Tab title="SceneGraph">
+    **Color:** Teal `(0.1, 0.6, 0.6)` — **Output node:** `SceneGraphOutputNode`
+
+    Manipulates scene node transforms and hierarchy.
+
+    | Node | Inputs | Outputs |
+    |---|---|---|
+    | Scene Graph Output | Transform, Active | — |
+    | Get Transform | — | Position, Rotation, Scale |
+    | Set Transform | Position, Rotation, Scale | Transform |
+    | Find Node | — | Found |
+
+    Also includes Add, Subtract, Multiply, Float, Integer, Vector, and Viewer.
+  </Tab>
+</Tabs>
+
+---
+
+## NodeGraphPlayer — Runtime Playback
+
+`NodeGraphPlayer` is a scene node that evaluates a `NodeGraphAsset` every frame while playing. It creates an internal copy of the graph, exposes input setters so scripts feed data in, and provides output getters so scripts read computed results back out.
+
+### Editor Properties
+
+| Property | Type | Description |
+|---|---|---|
+| Node Graph | Asset (NodeGraphAsset) | The graph asset to play. |
+| Play On Start | Bool | When `true`, playback begins automatically on scene start. |
+
+### Lifecycle
+
+```
+Scene starts → Play() called if PlayOnStart is true
+Every tick   → GraphProcessor evaluates the runtime graph; Domain::OnGraphEvaluated fires
+Scene stops  → Destroy() stops playback and cleans up the runtime graph
+```
+
+The runtime graph is a copy of the asset's graph, created lazily on the first call to `Play()` or any `SetInput*` method. Calling `SetNodeGraphAsset()` discards the existing runtime graph so a fresh copy is created next time.
+
+### Playback State Diagram
+
+```
+           Play()          Pause()
+ Stopped ─────────> Playing ─────────> Paused
+    ^                  │                  │
+    │    Stop()        │     Stop()       │
+    └──────────────────┴──────────────────┘
+    │                                     │
+    └──────────  Reset() (destroys graph) ─┘
+```
+
+`Reset()` both stops evaluation and destroys the runtime graph; all internal state is lost. `Stop()` stops evaluation but preserves state, so `Play()` resumes from the last evaluated frame.
+
+### Setting Inputs
+
+```lua
+function OnTick(deltaTime)
+    local player = self:GetNode():FindChild("MyGraphPlayer", true)
+
+    -- Feed game state into the graph
+    player:SetInputFloat("Speed", GetPlayerSpeed())
+    player:SetInputBool("IsGrounded", IsPlayerGrounded())
+    player:SetInputVector("Position", GetPlayerPosition())
+
+    -- Read computed result (0-based output pin index)
+    local color = player:GetOutputColor(0)
+    ApplyColor(color)
+end
+```
+
+All setters return `true` on success, `false` if the named input pin was not found. Calling a setter before `Play()` is safe — it creates the runtime graph automatically.
+
+| Setter | Value Type |
+|---|---|
+| `SetInputFloat(name, value)` | `number` |
+| `SetInputInt(name, value)` | `number` |
+| `SetInputBool(name, value)` | `boolean` |
+| `SetInputString(name, value)` | `string` |
+| `SetInputVector(name, value)` | `Vector` |
+| `SetInputColor(name, value)` | `Vector` (RGBA) |
+
+### Reading Outputs
+
+Output pins are read by **0-based index**. Default values are returned if the graph has not evaluated yet.
+
+| Getter | Return | Default |
+|---|---|---|
+| `GetOutputFloat(pinIndex)` | `number` | `0.0` |
+| `GetOutputInt(pinIndex)` | `integer` | `0` |
+| `GetOutputBool(pinIndex)` | `boolean` | `false` |
+| `GetOutputVector(pinIndex)` | `Vector` | `(0, 0, 0)` |
+| `GetOutputColor(pinIndex)` | `Vector` | `(0, 0, 0, 0)` |
+
+### Swapping Graph Assets
+
+```lua
+local player = self:GetNode():FindChild("GraphPlayer", true)
+
+-- Stop and clear current graph state
+player:Reset()
+
+-- Assign a new asset and play
+local newAsset = Asset.Load("graphs/DamageFeedback")
+player:SetNodeGraphAsset(newAsset)
+player:Play()
+```
+
+---
+
+## Creating Custom Nodes
+
+<Steps>
+  <Step title="Define the node class">
+    ```cpp
+    // MyCustomNodes.h
+    #pragma once
+    #include "NodeGraph/GraphNode.h"
+
+    class MyCustomNode : public GraphNode
+    {
+    public:
+        DECLARE_GRAPH_NODE(MyCustomNode, GraphNode);
+
+        virtual void SetupPins() override;
+        virtual void Evaluate() override;
+        virtual const char* GetNodeTypeName() const override { return "My Custom Node"; }
+        virtual const char* GetNodeCategory() const override { return "Custom"; }
+        virtual glm::vec4 GetNodeColor() const override;
+    };
+    ```
+  </Step>
+  <Step title="Implement SetupPins and Evaluate">
+    ```cpp
+    // MyCustomNodes.cpp
+    #include "MyCustomNodes.h"
+
+    FORCE_LINK_DEF(MyCustomNodes);
+    DEFINE_GRAPH_NODE(MyCustomNode);
+
+    void MyCustomNode::SetupPins()
+    {
+        AddInputPin("Value A", DatumType::Float, Datum(0.0f));
+        AddInputPin("Value B", DatumType::Float, Datum(1.0f));
+        AddOutputPin("Result", DatumType::Float);
+    }
+
+    void MyCustomNode::Evaluate()
+    {
+        float a = GetInputValue(0).GetFloat();
+        float b = GetInputValue(1).GetFloat();
+        SetOutputValue(0, Datum(a * b + 0.5f));
+    }
+
+    glm::vec4 MyCustomNode::GetNodeColor() const
+    {
+        return glm::vec4(0.8f, 0.4f, 0.1f, 1.0f);
+    }
+    ```
+  </Step>
+  <Step title="Register with a domain">
+    Register with one domain:
+    ```cpp
+    DEFINE_GRAPH_NODE(MyCustomNode);
+    REGISTER_GRAPH_NODE(MyCustomNode, "My Custom Node", "Custom", "Material",
+                        glm::vec4(0.8f, 0.4f, 0.1f, 1.0f));
+    ```
+    Register with multiple domains:
+    ```cpp
+    REGISTER_GRAPH_NODE_MULTI(MyCustomNode, "My Custom Node", "Custom",
+                              glm::vec4(0.8f, 0.4f, 0.1f, 1.0f), "Material", "Shader");
+    ```
+  </Step>
+  <Step title="Force linkage">
+    Add `FORCE_LINK_CALL(MyCustomNodes)` to `Engine.cpp`'s `ForceLinkage()` function and add the `.h`/`.cpp` files to `Engine.vcxproj` and `Engine.vcxproj.filters`.
+  </Step>
+</Steps>
+
+### Available DatumTypes in Nodes
+
+| DatumType | C++ Type | Access Method |
+|---|---|---|
+| `DatumType::Float` | `float` | `GetFloat()` |
+| `DatumType::Integer` | `int32_t` | `GetInteger()` |
+| `DatumType::Bool` | `bool` | `GetBool()` |
+| `DatumType::Vector` | `glm::vec3` | `GetVector()` |
+| `DatumType::Vector2D` | `glm::vec2` | `GetVector2D()` |
+| `DatumType::Color` | `glm::vec4` | `GetColor()` |
+
+<Note>
+  Always provide default values for input pins (`AddInputPin("Name", type, Datum(default))`) so the node produces meaningful output even when no links are connected. Output-only source nodes (like `TimeNode`) have no input pins; input-only sink nodes have no output pins.
+</Note>
+
+---
+
+## Creating Custom Domains
+
+<Steps>
+  <Step title="Define the domain class">
+    Create a header in `Engine/Source/Engine/NodeGraph/Domains/`:
+
+    ```cpp
+    // MyDomain.h
+    #pragma once
+    #include "NodeGraph/GraphDomain.h"
+
+    class MyDomain : public GraphDomain
+    {
+    public:
+        virtual const char* GetDomainName() const override { return "MyDomain"; }
+        virtual void RegisterNodeTypes() override;
+        virtual void OnGraphEvaluated(NodeGraph* graph) override;
+        virtual TypeId GetDefaultOutputNodeType() const override;
+    };
+    ```
+  </Step>
+  <Step title="Implement RegisterNodeTypes and OnGraphEvaluated">
+    ```cpp
+    // MyDomain.cpp
+    void MyDomain::RegisterNodeTypes()
+    {
+        // Shared utility nodes
+        AddNodeType(AddNode::GetStaticType(), "Add", "Math",
+                    glm::vec4(0.4f, 0.6f, 0.2f, 1.0f));
+        AddNodeType(FloatConstantNode::GetStaticType(), "Float", "Value",
+                    glm::vec4(0.2f, 0.5f, 0.7f, 1.0f));
+
+        // Domain-specific nodes
+        AddNodeType(MyOutputNode::GetStaticType(), "My Output", "MyDomain",
+                    glm::vec4(0.5f, 0.3f, 0.8f, 1.0f));
+    }
+
+    TypeId MyDomain::GetDefaultOutputNodeType() const
+    {
+        return MyOutputNode::GetStaticType();
+    }
+
+    void MyDomain::OnGraphEvaluated(NodeGraph* graph)
+    {
+        // Find output node and read computed values
+        for (uint32_t i = 0; i < graph->GetNumNodes(); ++i)
+        {
+            GraphNode* node = graph->GetNodes()[i];
+            if (node->GetType() == MyOutputNode::GetStaticType())
+            {
+                float value = node->GetInputValue(0).GetFloat();
+                // Apply to your system...
+                break;
+            }
+        }
+    }
+    ```
+  </Step>
+  <Step title="Register the domain at engine startup">
+    In `Engine.cpp`, add before `ProcessExternalRegistrations()`:
+    ```cpp
+    #include "NodeGraph/Domains/MyDomain.h"
+
+    // In engine initialization:
+    GraphDomainManager::Get()->RegisterDomain(new MyDomain());
+    ```
+  </Step>
+  <Step title="Update project files">
+    Add new `.h` and `.cpp` files to `Engine.vcxproj` and `Engine.vcxproj.filters`.
+  </Step>
+</Steps>
+
+### Choosing Shared Nodes for Your Domain
+
+| Domain type | Include |
+|---|---|
+| Math-heavy (Material, Shader, Procedural) | All Math nodes + all Value nodes |
+| Logic-heavy (FSM) | Float, Integer, Viewer only |
+| Transform-heavy (SceneGraph) | Add, Subtract, Multiply, Float, Integer, Vector |

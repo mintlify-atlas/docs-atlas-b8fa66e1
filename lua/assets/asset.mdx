@@ -1,0 +1,109 @@
+---
+title: "Asset — Base Lua API and Scene Asset in Polyphase Engine"
+sidebarTitle: "Asset"
+description: "Lua API for the base Asset class (GetName, GetTypeName, IsLoaded, IsTransient, GetRefCount) and the Scene asset (Capture, Instantiate)."
+---
+
+Every loadable resource in Polyphase — textures, meshes, sounds, materials, scenes — inherits from the `Asset` base class. Assets are created by importing source files in the editor or generated at runtime. An asset can only be unloaded once nothing holds a reference to it; call `RefSweep()` to sweep unreferenced assets from memory.
+
+---
+
+## Asset (base class)
+
+### `Asset:GetName()`
+
+Get the asset's name as registered in the asset registry.
+
+**Returns:** `string` — asset name.
+
+```lua
+local tex = LoadAsset("Textures/T_Rock")
+Log.Debug(tex:GetName())  -- "T_Rock"
+```
+
+---
+
+### `Asset:GetTypeName()`
+
+Get the asset's type as a string.
+
+**Returns:** `string` — type name, e.g. `"Texture"`, `"StaticMesh"`, `"Material"`.
+
+```lua
+local asset = LoadAsset("Materials/M_Ground")
+Log.Debug(asset:GetTypeName())  -- "Material"
+```
+
+---
+
+### `Asset:GetRefCount()`
+
+Get the number of references currently pointing to this asset, including both C++ and Lua references.
+
+**Returns:** `integer` — reference count.
+
+---
+
+### `Asset:IsTransient()`
+
+Check whether this asset is transient. Transient assets are not saved in the asset registry and cannot be written to a file. Common transient types include `MaterialLite`, `MaterialInstance`, and `ParticleSystemInstance` created at runtime.
+
+**Returns:** `boolean` — `true` if transient.
+
+---
+
+### `Asset:IsLoaded()`
+
+Check whether the asset data has been loaded into memory. Particularly useful after an asynchronous load initiated with `AsyncLoadAsset()`.
+
+**Returns:** `boolean` — `true` if loaded.
+
+```lua
+local mesh = AsyncLoadAsset("Meshes/SK_BigEnemy")
+
+function Level:Tick(dt)
+    if mesh:IsLoaded() and not self.enemySpawned then
+        self.enemySpawned = true
+        local node = self:CreateChild("SkeletalMesh3D")
+        node:SetSkeletalMesh(mesh)
+    end
+end
+```
+
+---
+
+## Scene Asset
+
+A `Scene` is a snapshot of a node tree. It is analogous to a Prefab, Blueprint, or Collection in other engines. Scenes can be instantiated multiple times, each producing an independent node tree.
+
+Inherits: `Asset`
+
+### `Scene:Capture(root)`
+
+Save the node tree rooted at `root` into this scene asset.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `root` | `Node` | Root node of the tree to capture. |
+
+<Warning>Capturing overwrites the scene asset's current data. Use with care during gameplay; this is primarily an editor operation.</Warning>
+
+---
+
+### `Scene:Instantiate()`
+
+Create a live node tree from the description stored in this scene asset.
+
+**Returns:** `Node` — the newly created root node. The node is not automatically parented to anything; attach it to the world or another node as needed.
+
+```lua
+-- Load a prefab scene and spawn it at a location
+local enemyScene = LoadAsset("Scenes/SC_Enemy")
+local enemy = enemyScene:Instantiate()
+enemy:SetWorldPosition(spawnPoint:GetWorldPosition())
+world:GetRoot():AddChild(enemy)
+```
+
+---
+
+<Note>When a scene is instantiated, the root node holds a reference to the originating `Scene` asset. You can retrieve it at any time with `node:GetScene()`.</Note>

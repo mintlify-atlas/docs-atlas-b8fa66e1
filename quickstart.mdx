@@ -1,47 +1,163 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Quickstart — Build and Package Your First Polyphase Game"
+sidebarTitle: "Quickstart"
+description: "Install dependencies, get the Polyphase editor, create a project, build a scene with a StaticMesh3D, and package a Wii DOL in a few steps."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+This guide walks you through installing the Polyphase Engine, creating a project, building a scene, and packaging it for Wii. By the end you will have a runnable `.dol` file ready for Wii hardware or an emulator such as Dolphin.
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+
+### Install Editor Dependencies
+
+Before using the engine, set up your development environment for your operating system. Polyphase always packages for GameCube, Wii, and 3DS, so the devkitPro toolchains are part of the baseline setup regardless of your target platform.
+
+<Tabs>
+  <Tab title="Windows">
+    Follow the [Windows Setup](/setup/windows) guide to install:
+    - Visual Studio Community 2022 (with the **Desktop development with C++** workload)
+    - CMake
+    - Vulkan SDK 1.3.275.0 (LunarG)
+    - Python 3 on `PATH`
+    - devkitPro with the `wii-dev`, `3ds-dev`, `libogc2`, `libogc2-libdvm`, and `gamecube-tools-git` packages
+
+    After installing, pull submodules and run the prebuild script from the repository root:
+
+    ```bat
+    git submodule update --init --recursive
+    Tools\prebuild.bat
+    ```
+  </Tab>
+  <Tab title="Linux">
+    Follow the [Linux Setup](/setup/linux) guide to install:
+    - Build essentials (`g++`, `make`, `cmake`, `pkg-config`, `libx11-dev`, `libasound2-dev`, `libpulse-dev`, `libcurl4`, `libssl-dev`)
+    - Vulkan SDK 1.4.350.0 (LunarG)
+    - devkitPro pacman with `wii-dev`, `3ds-dev`, `libogc2`, `libogc2-libdvm`, and `gamecube-tools-git`
+
+    For Debian/Ubuntu, install the core packages:
 
     ```bash
-    npm install your-package
+    sudo apt install g++ make libx11-dev libasound2-dev libpulse-dev libcurl4 cmake pkg-config libssl-dev
     ```
-  </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+
+    After installing, pull submodules and run the prebuild script:
 
     ```bash
-    your-cli init
+    git submodule update --init --recursive
+    bash Tools/prebuild.sh
     ```
-  </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+  </Tab>
+  <Tab title="macOS">
+    Follow the [macOS Setup](/setup/mac) guide to install:
+    - Xcode Command Line Tools (`clang`, `make`, `lipo`, `codesign`)
+    - Homebrew with `cmake` and `python3`
+    - Vulkan SDK 1.4.357.1 (LunarG, macOS — includes MoltenVK)
+    - devkitPro pacman with `wii-dev`, `3ds-dev`, `libogc2`, `libogc2-libdvm`, and `gamecube-tools-git`
 
     ```bash
-    your-cli start
+    xcode-select --install
+    brew install cmake python3
+    git submodule update --init --recursive
+    bash Tools/prebuild_mac.sh
     ```
-  </Step>
-</Steps>
+  </Tab>
+</Tabs>
+
+### Get the Editor
+
+You have two options: build the editor from source or download a prebuilt release.
+
+<Tabs>
+  <Tab title="Build from Source">
+    Choose your preferred workflow.
+
+    **Visual Studio (Windows):**
+    1. Open `Polyphase.sln`.
+    2. Switch to the `DebugEditor` solution configuration.
+    3. Set the `Standalone` project as the Startup Project.
+    4. In the debug settings for `Standalone`, change the working directory to `$(SolutionDir)`.
+    5. Build and run `Standalone`.
+
+    **VS Code (all platforms):**
+    1. Open the repository root folder in VS Code.
+    2. Install the **C/C++ Extension Pack**.
+    3. Open the **Run and Debug** tab, select **Polyphase Editor** from the dropdown, and press the green play button.
+
+    **Terminal (Linux):**
+    ```bash
+    cd Standalone
+    make -f Makefile_Linux_Editor
+    cd ..
+    Standalone/Build/Linux/PolyphaseEditor.elf
+    ```
+
+    **Terminal (macOS):**
+    ```bash
+    cd Standalone
+    make -f Makefile_Mac_Editor -j$(sysctl -n hw.ncpu)
+    cd ..
+    Standalone/Build/Mac/PolyphaseEditor
+    ```
+
+    <Note>
+      Always run the editor binary from the **repository root directory** so that `Engine/Assets` and `Engine/Shaders` resolve correctly.
+    </Note>
+  </Tab>
+  <Tab title="Download a Prebuilt Release">
+    Go to the **Releases** page on GitHub and download the installer for your platform. Installers are provided for supported operating systems — run the installer and follow the prompts.
+  </Tab>
+</Tabs>
+
+### Create a New Project
+
+Once the editor is running, you will be greeted by the **Recent Projects** window.
+
+1. Click **Create New Project**.
+2. Choose a name and a location for your project, then confirm.
+
+<Warning>
+  The directory that contains your project file must be named the same as the project itself. For example, a project named `MyGame` must live in a folder called `MyGame` and contain a `MyGame.oct` file. A mismatch will prevent the game from loading after a successful build.
+</Warning>
+
+### Create a Scene
+
+With your project open in the editor:
+
+1. In the **Asset Panel**, right-click and select **Create Asset → Scene**.
+2. Name your new scene (e.g. `MyScene`).
+3. Double-click the scene to open it.
+4. In the **Scene Hierarchy**, right-click and select **Add New → Static Mesh** to add a `StaticMesh3D` node to the scene.
+5. Save the scene with **Ctrl+S** (or **File → Save**).
 
 <Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
-
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+  You can also press **Alt+1** while the mouse cursor is in the viewport to spawn a `StaticMesh3D` node instantly, or **Shift+A** to open the full node spawn menu.
 </Tip>
+
+### Add Your Scene to the Default Scene
+
+The project starts with a default scene called `SC_Default`. Your new scene must be added to it so the engine loads it at startup.
+
+1. Open `SC_Default` by double-clicking it in the Asset Panel.
+2. In the **Scene Hierarchy**, right-click and select **Add New**.
+3. Find and select the scene you just created (e.g. `MyScene`).
+4. Save `SC_Default` with **Ctrl+S**.
+
+### Package for Wii
+
+1. Go to **File → Build Profiles**.
+2. Set up a new **Wii** build profile.
+3. Click **Build**.
+
+Once the build completes, you will have a `.dol` file ready to run on Wii hardware or in an emulator such as Dolphin.
+
+<Note>
+  Wii packaging requires the `wii-dev` devkitPro package (which provides the `powerpc-eabi-g++` compiler) to be installed and the `DEVKITPRO` and `DEVKITPPC` environment variables to be set. If packaging fails with a missing-compiler error, see the [Windows](/setup/windows) or [Linux](/setup/linux) setup guide.
+</Note>
+
+</Steps>
+
+## Next Steps
+
+- [Editor Overview](/editor-overview) — Learn all editor panels, hotkeys, and headless mode.
+- [Compiling](/setup/compiling) — Detailed guide for Visual Studio, VS Code, and Terminal builds.
+- [Docker Builds](/setup/docker) — Build for console targets without installing toolchains locally.

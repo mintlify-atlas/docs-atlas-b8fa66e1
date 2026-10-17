@@ -1,0 +1,236 @@
+---
+title: "Material System: Lite, Base, and Instance Hierarchy"
+sidebarTitle: "Materials"
+description: "Polyphase material system: cross-platform MaterialLite, Vulkan MaterialBase and MaterialInstance, mesh material slots, and the node graph material editor."
+---
+
+Every renderable object in Polyphase displays through a **material**: an asset that defines how geometry is shaded — its textures, color, blend mode, and lighting response. The engine provides two parallel material systems unified under a common `Material` base class: a lightweight path that runs on every supported platform, and a full shader-authoring path built on Vulkan's GLSL pipeline.
+
+## Material Hierarchy
+
+```
+Material              (base — blend mode, cull mode, depth test, fog, sort priority)
+ ├── MaterialLite      (all platforms — fixed-function properties + up to 4 texture slots)
+ └── MaterialBase      (Vulkan only — custom GLSL vertex + fragment shaders)
+      └── MaterialInstance  (Vulkan only — per-instance parameter overrides on a MaterialBase)
+```
+
+<CardGroup cols={2}>
+  <Card title="MaterialLite" icon="layer-group">
+    Works on **all platforms** — Vulkan, GX (Wii/GameCube), C3D (3DS), and any addon target. Uses fixed-function shading with up to four texture slots, a color tint, blend mode, shading model, specular, fresnel, and UV controls. No custom shader code required.
+  </Card>
+  <Card title="MaterialBase" icon="code">
+    **Vulkan only.** Accepts a custom GLSL file (see `Engine/Shaders/GLSL/mat/DebugNormal.glsl` for an example). The engine compiles the shader via `shaderc` at asset-load time, so edits take effect on the next save/reload without running `compile.bat`.
+  </Card>
+  <Card title="MaterialInstance" icon="copy">
+    **Vulkan only.** References a `MaterialBase` (or another `MaterialInstance`) and overrides individual scalar, vector, or texture parameters without recompiling the shader. Share one shader, diverge in values.
+  </Card>
+  <Card title="Node Graph Materials" icon="diagram-project">
+    The **Material** graph domain in the node graph editor produces material logic visually — Texture Sample, Fresnel, Panner, Normal Map, and math nodes feed into a Material Output sink node (Base Color, Metallic, Roughness, Normal, Emissive, Opacity).
+  </Card>
+</CardGroup>
+
+## MaterialLite Properties
+
+`MaterialLite` is the primary material type for cross-platform projects. All of its properties map cleanly to fixed-function state on Wii/GameCube TEV stages and to Polyphase's forward GLSL shaders on Vulkan.
+
+### Shading Model and Blend Mode
+
+<Tabs>
+  <Tab title="Editor">
+    Open a `MaterialLite` asset in the inspector. The **Shading Model** dropdown chooses how the surface interacts with lights:
+
+    | Shading Model | Description |
+    |---|---|
+    | Lit | Standard diffuse + specular; receives directional and point lights. |
+    | Unlit | No lighting calculation; color is the direct output. Use for skyboxes, UI quads, emissive panels. |
+
+    **Blend Mode** controls transparency:
+
+    | Blend Mode | Behavior |
+    |---|---|
+    | Opaque | Fully solid; written to depth buffer. |
+    | Masked | Alpha-tested; fragments below `MaskCutoff` are discarded. |
+    | Translucent | Alpha-blended; not written to depth buffer. |
+    | Additive | Added on top of the existing pixel (fire, sparks, glows). |
+  </Tab>
+  <Tab title="Lua">
+    ```lua
+    local mat = MaterialLite.Create()
+    mat:SetShadingModel(ShadingModel.Lit)
+    mat:SetBlendMode(BlendMode.Opaque)
+    mat:SetMaskCutoff(0.5)        -- for Masked mode
+    mat:SetOpacity(0.8)           -- for Translucent / Additive
+    mat:SetDepthTestDisabled(false)
+    mat:SetSortPriority(0)        -- higher = drawn later
+    ```
+  </Tab>
+</Tabs>
+
+### Textures and UV Controls
+
+`MaterialLite` supports up to **four texture slots**. On GX platforms, each slot maps to a TEV stage; on Vulkan it maps to sampler bindings in the forward shader.
+
+```lua
+local mat = MaterialLite.Create()
+mat:SetTexture(1, LoadAsset("T_Albedo"))
+mat:SetTexture(2, LoadAsset("T_Normal"))
+
+-- UV tiling and scrolling (per UV channel, index 1 or 2)
+mat:SetUvScale(Vector.Create(2, 2, 0), 1)
+mat:SetUvOffset(Vector.Create(0.1, 0, 0), 1)
+
+-- Map a specific texture slot to UV channel 2
+mat:SetUvMap(2, 2)
+```
+
+<Note>
+  `SetUvMap(slot, uvMap)` assigns which UV channel (1 or 2) a texture slot samples. This lets you use a second set of UVs for lightmaps or decals without authoring separate geometry.
+</Note>
+
+### TEV Mode (GameCube / Wii)
+
+On GX platforms, textures are combined through the Texture Environment (TEV) unit. `SetTevMode(slot, mode)` controls how each slot blends with the previous stage:
+
+```lua
+mat:SetTevMode(1, TevMode.Replace)    -- slot 1 replaces the base color
+mat:SetTevMode(2, TevMode.Modulate)   -- slot 2 multiplies over slot 1
+```
+
+### Color, Specular, and Fresnel
+
+```lua
+mat:SetColor(Vector.Create(1, 0.5, 0.5, 1))   -- RGBA tint
+mat:SetSpecular(0.6)                            -- specular intensity
+mat:SetWrapLighting(0.3)                        -- Vulkan only
+
+mat:EnableFresnel(true)
+mat:SetFresnelColor(Vector.Create(0.8, 0.9, 1, 1))
+mat:SetFresnelPower(2.5)
+
+mat:SetEmission(1.0)   -- used by the light baker and path tracer
+```
+
+### Cull Mode and Fog
+
+```lua
+local cullMode = mat:GetCullMode()    -- Back (default), Front, None
+local applyFog = mat:ShouldApplyFog() -- true/false
+```
+
+Set **Cull Mode: Front** for skybox materials (camera inside the sphere) and **Apply Fog: false** to keep skyboxes unaffected by scene fog.
+
+---
+
+## MaterialBase (Vulkan Custom Shaders)
+
+`MaterialBase` compiles a `.glsl` shader at asset-load time via `shaderc`. The file provides both a vertex stage and a fragment stage. The engine's `Common.glsl` include supplies the global uniform block, the shadow sampler, and helper functions like `SampleDirectionalShadow(worldPos)`.
+
+<Steps>
+  <Step title="Create the asset">
+    In the asset browser, right-click → **Create Asset → Material Base**. The inspector shows a **Shader** file picker — point it at your `.glsl` source file.
+  </Step>
+  <Step title="Define parameters">
+    In the GLSL file, declare `uniform` variables for scalar, vector, and texture parameters. The engine exposes these as named parameters in the inspector and through the Lua `SetScalarParameter` / `SetVectorParameter` / `SetTextureParameter` API.
+  </Step>
+  <Step title="Set parameters at runtime">
+    ```lua
+    local mat = LoadAsset("M_WaterSurface")
+    mat:SetScalarParameter("WaveSpeed", 1.5)
+    mat:SetVectorParameter("WaterColor", Vector.Create(0.1, 0.4, 0.8, 1))
+    mat:SetTextureParameter("NormalMap", LoadAsset("T_WaterNormal"))
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  `MaterialBase` and `MaterialInstance` are **Vulkan-only**. If your project targets GameCube, Wii, or 3DS, use `MaterialLite` exclusively or gate material creation on a platform check. Attempting to assign a `MaterialBase` on a non-Vulkan platform is silently ignored.
+</Warning>
+
+---
+
+## MaterialInstance (Per-Instance Overrides)
+
+`MaterialInstance` re-uses a compiled `MaterialBase` shader but overrides individual parameter values. This is the recommended way to share shaders across many objects while varying color, texture, or numeric properties cheaply.
+
+```lua
+-- Create a new instance from a base material
+local inst = MaterialInstance.Create(LoadAsset("M_Character_Base"))
+
+-- Override parameters for this instance only
+inst:SetVectorParameter("SkinColor", Vector.Create(0.9, 0.7, 0.5, 1))
+inst:SetTextureParameter("FaceTexture", LoadAsset("T_HeroFace"))
+
+-- Get / swap the underlying base at any time
+local base = inst:GetBaseMaterial()
+inst:SetBaseMaterial(LoadAsset("M_Character_Wet"))
+```
+
+`MaterialInstance` inherits all read accessors from `Material` — `GetBlendMode()`, `IsDepthTestDisabled()`, `ShouldApplyFog()`, etc. — forwarding to its parent base.
+
+---
+
+## Material Slots on Mesh Nodes
+
+Every `StaticMesh3D`, `SkeletalMesh3D`, and `InstancedMesh3D` node exposes a **Material Override** slot that replaces the asset's default material at the instance level.
+
+For multi-section `SkeletalMesh` assets (see [Skeletal Animation](/guides/skeletal-animation)), each section has its own slot, forming a priority chain:
+
+1. Component-level section override (`mSectionMaterialOverrides[i]`)
+2. Section's own material (on the asset)
+3. Legacy whole-mesh override (`mMaterialOverride`)
+4. Asset-default `mMaterial`
+5. Renderer default material
+
+```lua
+local node = world:SpawnBasicNode(BASIC_SKELETAL_MESH)
+node:SetSkeletalMesh(LoadAsset("SK_Hero"))
+
+-- By section name (preferred — immune to index reordering)
+node:SetMaterialSlot("Cape", LoadAsset("M_Cape_Red"))
+
+-- By slot index (1-based in Lua)
+node:SetMaterialSlot(1, LoadAsset("M_Body_Tanned"))
+```
+
+---
+
+## Node Graph Material Editor
+
+The **Material** graph domain lets you build material logic visually. Open any `NodeGraphAsset` configured for the Material domain and the editor presents a canvas where you connect nodes to a **Material Output** sink.
+
+<Accordion title="Material domain nodes">
+
+| Node | Inputs | Outputs | Description |
+|---|---|---|---|
+| **Material Output** | Base Color, Metallic, Roughness, Normal, Emissive, Opacity | — | Sink node; collects all shading parameters. |
+| **Texture Sample** | UV | Color, R, G, B, A | Samples a texture at UV coordinates. |
+| **Fresnel** | Exponent, Base Value | Result | View-angle Fresnel approximation. |
+| **Panner** | UV, Speed X, Speed Y, Time | UV | Animates UV coordinates for flowing effects. |
+| **Normal Map** | Normal, Strength | Result | Unpacks and scales normal map data. |
+| **Math nodes** | *(various)* | *(various)* | Add, Subtract, Multiply, Divide, Lerp, Clamp — all shared across domains. |
+| **Value nodes** | — | Float, Integer, Bool, Vector, Color | Constant inputs for driving any pin. |
+
+</Accordion>
+
+The graph is evaluated by `GraphProcessor` using a topological sort (Kahn's algorithm) — see [Node Graph](/guides/node-graph) for the full architecture. After evaluation, the `MaterialDomain::OnGraphEvaluated` callback reads the output node's computed pin values and forwards them to the material's GPU state.
+
+---
+
+## Platform Considerations
+
+<Tabs>
+  <Tab title="Vulkan (Windows, Linux, Android)">
+    Full `MaterialBase` and `MaterialInstance` support. Custom GLSL shaders are compiled at load time. The shadow sampler, global uniforms, and `Common.glsl` helpers are available. Global engine shaders (Forward, Shadow, etc.) are pre-compiled SPIR-V; material shaders compile on-demand.
+  </Tab>
+  <Tab title="GX (Wii / GameCube)">
+    `MaterialLite` only. Up to four texture slots map to GX TEV stages. `SetTevMode` controls how stages combine. Blend modes map to GX alpha blending configuration. No vertex or fragment shader code.
+  </Tab>
+  <Tab title="C3D (3DS)">
+    `MaterialLite` only. Textures and colors bind through Picasso GPU state. The material bind order for multi-section skeletal meshes must follow `BindMaterial` → matrix uniforms → UV uniforms → draw, due to C3D's deferred state cache.
+  </Tab>
+</Tabs>
+
+<Note>
+  `Terrain3D` uses `MaterialLite` exclusively across all platforms. Assigning a `MaterialBase` to terrain has no effect on non-Vulkan builds.
+</Note>

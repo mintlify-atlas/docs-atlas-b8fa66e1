@@ -1,0 +1,184 @@
+---
+title: "Asset System in Polyphase Engine"
+sidebarTitle: "Assets"
+description: "Explore the Polyphase asset system: asset types, importing, the Asset Panel, DataAssets, static content obfuscation, and the LoadAsset Lua API."
+---
+
+Assets are the content building blocks of a Polyphase project — meshes, textures, audio clips, scenes, and more. Every asset is stored as a cooked `.oct` file on disk and is identified by its name. The engine loads assets on demand, caches them while they are referenced, and unloads them when nothing needs them anymore. Understanding the asset pipeline helps you organize projects efficiently and avoid runtime loading hitches.
+
+## Asset Types
+
+<CardGroup cols={2}>
+  <Card title="StaticMesh" icon="box">
+    A non-animated 3D mesh used for world geometry, props, and any object that does not need bones. Imported from FBX, OBJ, or similar formats.
+  </Card>
+  <Card title="SkeletalMesh" icon="person-running">
+    A 3D mesh with a skeleton, used for characters and animated props. Import the mesh and its associated skeleton from FBX.
+  </Card>
+  <Card title="Material" icon="palette">
+    A full material defined by a node graph. Supports Lit, Unlit, and Toon shading models, and blend modes including Opaque, Masked, Translucent, and Additive.
+  </Card>
+  <Card title="MaterialInstance" icon="paint-brush">
+    A parameterized instance of a parent Material. Override scalar, vector, and texture parameters without duplicating the shader graph.
+  </Card>
+  <Card title="Texture" icon="image">
+    A 2D image resource. Imported from PNG, JPG, TGA, or similar. Used by materials, UI quads, and sprite animations.
+  </Card>
+  <Card title="SoundWave" icon="waveform">
+    An audio clip. Supports one-shot and looping playback, 3D attenuation, and streaming mode for long tracks (required on memory-constrained platforms like 3DS).
+  </Card>
+  <Card title="Font" icon="font">
+    A bitmap or vector font used by `Text` widget nodes and `TextMesh3D` nodes.
+  </Card>
+  <Card title="SpriteAnimation" icon="film">
+    A sequence of texture frames that define a 2D sprite animation, used by `AnimatedSprite3D` and `SpriteAnimator` nodes.
+  </Card>
+  <Card title="Scene" icon="sitemap">
+    A saved node hierarchy. Scenes can be instantiated multiple times and nested inside other scenes as reusable prefabs.
+  </Card>
+  <Card title="Timeline" icon="timeline">
+    A keyframe-based animation asset that drives properties on nodes over time, played back by a `TimelinePlayer` node.
+  </Card>
+  <Card title="DataAsset" icon="database">
+    A designer-editable data container backed by a Lua script that defines its properties. Similar to Unity's ScriptableObjects. Ideal for enemy stats, item databases, and shared configuration.
+  </Card>
+  <Card title="ParticleSystem" icon="sparkles">
+    Defines emitter shape, particle lifetime, velocity, and visual properties for use with `Particle3D` nodes.
+  </Card>
+</CardGroup>
+
+---
+
+## The Asset Panel
+
+The **Asset Panel** is the file browser for your project's assets. It shows the `Assets/` directory tree and lets you create, rename, move, and delete assets. Open it from the **View** menu if it is not already docked.
+
+Key operations in the Asset Panel:
+
+- **Right-click** an empty area → **Create Asset** to create a new asset of any type.
+- **Double-click** an asset to open it in its dedicated editor (material graph, scene editor, etc.).
+- **Drag** an asset onto a node's property field in the Inspector to assign it.
+
+---
+
+## Importing Assets
+
+Polyphase converts source files (FBX, PNG, WAV, etc.) into its internal `.oct` format during import.
+
+<Steps>
+  <Step title="Drag source files into the Asset Panel">
+    Drop your source files directly from your file manager onto the Asset Panel window. The engine automatically detects the type and runs the appropriate importer.
+  </Step>
+  <Step title="Configure import settings">
+    For meshes and textures an import dialog may appear. Set options such as mesh scale, normal generation, texture compression format, and mip-map generation, then confirm.
+  </Step>
+  <Step title="Use the cooked asset">
+    After import, the `.oct` asset appears in the Asset Panel ready to be assigned to nodes. The original source file is not required at runtime.
+  </Step>
+</Steps>
+
+---
+
+## Creating Assets in the Editor
+
+For asset types that do not come from external files (Materials, DataAssets, Scenes, Timelines, etc.), you create them directly inside the editor.
+
+1. Right-click in the **Asset Panel** at the desired folder location.
+2. Select **Create Asset** and choose the asset type.
+3. Give the asset a name (e.g. `MA_Rock`, `SC_MainMenu`, `DA_GoblinStats`).
+4. Double-click the new asset to open it and configure it.
+
+---
+
+## DataAssets
+
+DataAssets are data containers driven by a Lua script that describes their properties. They are the recommended pattern for storing designer-tweakable configuration without modifying code.
+
+### Defining a DataAsset
+
+Create a Lua script in your `Scripts/` folder that returns a property list from `GetProperties()`:
+
+```lua
+-- EnemyStats.lua
+function GetProperties()
+    return {
+        { name = "health",     type = DatumType.Integer, default = 100  },
+        { name = "damage",     type = DatumType.Integer, default = 10   },
+        { name = "speed",      type = DatumType.Float,   default = 5.0  },
+        { name = "deathSound", type = DatumType.Asset                   },
+    }
+end
+```
+
+Then create a DataAsset in the Asset Panel, set its **Script File** property to `EnemyStats`, and fill in the values in the Inspector.
+
+### Reading a DataAsset from Lua
+
+```lua
+local stats = Asset.Load("DA_Goblin")
+local health = stats:Get("health")
+local speed  = stats:Get("speed")
+```
+
+<Note>
+Use the `DA_` naming prefix for DataAssets (e.g. `DA_GoblinStats`, `DA_ItemDatabase`) to distinguish them from other asset types at a glance.
+</Note>
+
+---
+
+## Static Content and Content Pak
+
+Polyphase offers two opt-in packaging modes that protect shipped content from casual inspection.
+
+| Mode | Effect |
+|---|---|
+| **Static Content** | Wraps every cooked `.oct`, `.lua`, and `AssetRegistry.txt` file in an obfuscated container. File names and the folder tree still ship. |
+| **Content Pak** | Builds on Static Content: folds everything into a single `Content.pak` with an obfuscated index, then deletes the loose originals. Neither content nor names ship as readable files. |
+
+Both modes are enabled per build profile in **File > Build Profiles**. They work on all platforms including GameCube, Wii, and 3DS without any platform-specific code.
+
+<Warning>
+Static Content and Content Pak are obfuscation, not DRM. The decryption key ships inside the executable. These options defeat opening `.lua` files in a text editor or hex-editing `.oct` files, but will not stop a determined person with a disassembler.
+</Warning>
+
+---
+
+## Loading Assets from Lua
+
+Use `LoadAsset()` (a global alias for `AssetManager.LoadAsset()`) to load an asset by name at runtime. This is a synchronous blocking load.
+
+```lua
+-- Load a StaticMesh asset
+local mesh = LoadAsset("SM_Crate")
+self:SetMesh(mesh)
+
+-- Load a SoundWave and play it
+local sfx = LoadAsset("SFX_Coin")
+self:PlaySound(sfx)
+
+-- Load a Scene and spawn it
+local enemyScene = LoadAsset("SC_Enemy")
+local root = World.SpawnScene(enemyScene, self:GetPosition())
+```
+
+For assets that may be large or are needed in the background, use the async variant:
+
+```lua
+local pending = AssetManager.AsyncLoadAsset("SC_BigLevel")
+
+function MyScript:Tick(deltaTime)
+    if pending:IsLoaded() then
+        -- Safe to use now
+    end
+end
+```
+
+To release an asset when it is no longer needed, call `AssetManager.UnloadAsset(name)`, or run `AssetManager.RefSweep()` to unload all assets that have no remaining references.
+
+---
+
+## Asset Registry
+
+At package time the engine generates an `AssetRegistry.txt` file inside the packaged output. This registry lists every asset's type and path and is how the runtime discovers available assets without scanning the filesystem — particularly important on platforms like GameCube and 3DS where directory enumeration is limited.
+
+The registry is generated automatically during packaging; you do not need to manage it manually.

@@ -1,0 +1,159 @@
+{
+  "projectType": "framework",
+  "projectName": "Polyphase Engine",
+  "projectDescription": "A cross-platform 3D game engine targeting GameCube, Wii, Nintendo 3DS, Windows, Linux, macOS, and Android, with Lua scripting, a visual editor, node graph system, and native C++ addon support.",
+  "theme": "aspen",
+  "primaryColor": "#ffc700",
+  "lightColor": "#140c2b",
+  "darkColor": "#e64048",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Getting Started",
+        "groups": [
+          {
+            "group": "Introduction",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "editor-overview"
+            ]
+          },
+          {
+            "group": "Setup",
+            "pages": [
+              "setup/windows",
+              "setup/linux",
+              "setup/mac",
+              "setup/compiling",
+              "setup/docker"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "guides/scripting",
+              "guides/scenes-and-nodes",
+              "guides/assets",
+              "guides/input",
+              "guides/packaging"
+            ]
+          },
+          {
+            "group": "Graphics & Rendering",
+            "pages": [
+              "guides/materials",
+              "guides/skeletal-animation",
+              "guides/node-graph",
+              "guides/ui-system",
+              "guides/terrain-and-voxels"
+            ]
+          },
+          {
+            "group": "Gameplay Systems",
+            "pages": [
+              "guides/networking",
+              "guides/physics-and-navmesh",
+              "guides/audio",
+              "guides/timeline",
+              "guides/save-data"
+            ]
+          },
+          {
+            "group": "Platform Targets",
+            "pages": [
+              "platforms/wii-gamecube",
+              "platforms/3ds",
+              "platforms/desktop",
+              "platforms/android"
+            ]
+          },
+          {
+            "group": "Extending the Engine",
+            "pages": [
+              "guides/addons",
+              "guides/native-addons",
+              "guides/csharp-scripting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Lua API",
+        "groups": [
+          {
+            "group": "Systems",
+            "pages": [
+              "lua/systems/engine",
+              "lua/systems/world",
+              "lua/systems/input",
+              "lua/systems/audio",
+              "lua/systems/renderer",
+              "lua/systems/network",
+              "lua/systems/log"
+            ]
+          },
+          {
+            "group": "Nodes",
+            "pages": [
+              "lua/nodes/node",
+              "lua/nodes/node3d",
+              "lua/nodes/mesh-nodes",
+              "lua/nodes/light-nodes",
+              "lua/nodes/physics-nodes",
+              "lua/nodes/widget-nodes"
+            ]
+          },
+          {
+            "group": "Assets",
+            "pages": [
+              "lua/assets/asset",
+              "lua/assets/materials",
+              "lua/assets/meshes",
+              "lua/assets/textures-and-sounds",
+              "lua/assets/animation-assets"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "lua/misc/vector",
+              "lua/misc/enums",
+              "lua/misc/globals",
+              "lua/misc/signal"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Multi-platform targeting: GameCube, Wii, 3DS, Windows, Linux, macOS, Android",
+    "Lua scripting with full engine API binding",
+    "Visual node-based editor with scene hierarchy and asset pipeline",
+    "Node Graph visual programming system (Material, Shader, Procedural, and more domains)",
+    "Skeletal animation with multi-section mesh support and HumanoidAvatar retargeting",
+    "Native C++ addon system with hot-reloading in editor",
+    "Built-in networking: HTTP/HTTPS client, WebSockets, multiplayer RPC",
+    "Physics (Bullet3), NavMesh (Recast/Detour), particle systems, terrain, voxels, tilemap",
+    "Timeline/cutscene system with custom track support",
+    "Headless build mode for CI/CD pipelines and Docker"
+  ],
+  "publicApiSurface": [
+    "Lua script callbacks: Create(), Awake(), Start(), Stop(), Tick(deltaTime), BeginOverlap(), EndOverlap(), OnCollision()",
+    "Lua GatherProperties() / GatherReplicatedData() / GatherNetFuncs()",
+    "Node types: Node3D, StaticMesh3D, SkeletalMesh3D, Camera3D, PointLight3D, DirectionalLight3D, Particle3D, Audio3D, NavMesh3D, Spline3D, Terrain3D, Voxel3D, TileMap2D",
+    "Widget types: Canvas, Button, Text, Slider, CheckBox, ComboBox, ScrollContainer, LineEdit, ProgressBar",
+    "Asset types: StaticMesh, SkeletalMesh, Material, MaterialInstance, Texture, SoundWave, Scene, SpriteAnimation, Font, Timeline",
+    "Lua Systems: Engine, Input, Audio, Renderer, Network, AssetManager, Log, Script, TimerManager, SignalBus",
+    "C++ Plugin API: PolyphasePlugin_GetDesc() entry point, PluginDesc struct, POLYPHASE_PLUGIN_API_VERSION",
+    "Headless CLI: -headless -project <path> -build <platform> [embedded]",
+    "Http::Get/Post/Put/Delete (C++ and Lua)",
+    "NodeGraph: GraphNode, GraphPin, GraphLink, GraphDomain, GraphDomainManager, GraphProcessor, REGISTER_GRAPH_NODE"
+  ]
+}

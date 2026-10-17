@@ -1,0 +1,787 @@
+---
+title: "Log, Debug, SignalBus, Math & LoadingMenu Lua API"
+sidebarTitle: "Log & Debug"
+description: "Log messages, use the Lua debugger, broadcast signals with SignalBus, run math utilities, and drive loading-screen transitions in Polyphase Engine."
+---
+
+This page covers the support and utility systems available in Polyphase Engine's Lua API: the `Log` system for writing messages at different severity levels, the `Debugger` module for in-editor breakpoints, `SignalBus` for process-global event broadcasting, the `Math` library for common numeric and vector operations, and `LoadingMenu` for managing scene transition loading screens.
+
+---
+
+## Log
+
+The `Log` global writes messages to the engine log and to the on-screen console. Messages can be filtered by severity. Logging can be enabled or disabled entirely.
+
+### Log.Debug
+
+```lua
+Log.Debug(msg)
+```
+
+Writes a message at **Debug** severity. **Alias:** `Log.Info`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `msg` | `string` | Message to log |
+
+```lua
+Log.Debug("Player health: " .. tostring(self.hp))
+```
+
+---
+
+### Log.Warning
+
+```lua
+Log.Warning(msg)
+```
+
+Writes a message at **Warning** severity.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `msg` | `string` | Message to log |
+
+---
+
+### Log.Error
+
+```lua
+Log.Error(msg)
+```
+
+Writes a message at **Error** severity. Errors are highlighted in the log and, when `Engine.SetBreakOnScriptError(true)` is set, will trigger the debugger.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `msg` | `string` | Message to log |
+
+---
+
+### Log.Console
+
+```lua
+Log.Console(msg, color)
+```
+
+Writes a message directly to the on-screen console with a custom color.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `msg` | `string` | Message to display |
+| `color` | `Vector` | Text color (RGBA) |
+
+```lua
+Log.Console("Checkpoint reached!", Vec(0, 1, 0, 1))  -- green
+```
+
+---
+
+### Log.Enable
+
+```lua
+Log.Enable(enable)
+```
+
+Globally enables or disables all logging and on-screen console output.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enable` | `boolean` | `true` to enable, `false` to silence |
+
+---
+
+### Log.IsEnabled
+
+```lua
+enabled = Log.IsEnabled()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `enabled` | `boolean` | Whether logging is currently active |
+
+---
+
+## Debugger
+
+The `Debugger` module provides in-editor breakpoint and snapshot hooks. All functions are silent no-ops in shipping (packaged) builds, so the same code ships to players without change.
+
+### Debugger.Break
+
+```lua
+Debugger.Break(message)
+```
+
+Hard-stops execution at the call site. The surrounding `pcall` is aborted via a Lua error, the world is frozen, and the debugger panel opens. The current Lua call does **not** continue past this line.
+
+<Warning>
+`Debugger.Break` aborts the current Lua call. If placed in a one-shot init function (`Awake`, `Start`), any code after the break will **not** run when the debugger stops here. Use `Debugger.Snapshot` instead if the rest of the function must complete.
+</Warning>
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `message` | `string` | (optional) Reason shown in the debugger panel |
+
+```lua
+function Goblin:OnDamage(amount)
+    self.hp = self.hp - amount
+    if self.hp < 0 then
+        Debugger.Break("hp went negative")  -- pauses here in editor only
+    end
+end
+```
+
+---
+
+### Debugger.Snapshot
+
+```lua
+Debugger.Snapshot(message)
+```
+
+Soft-pauses: captures the call stack, locals, and upvalues at the call site, then freezes the world from the **next** frame. Unlike `Break`, the current Lua call finishes normally after this line.
+
+Use `Snapshot` inside `Awake` or `Start` when you need to inspect state but must let the rest of the function complete so dependent scripts don't crash.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `message` | `string` | (optional) Reason shown in the debugger panel |
+
+```lua
+function Level:Start()
+    self:SetupEnemies()
+    Debugger.Snapshot("After setup")  -- world keeps ticking; snapshot captures this moment
+    self:RegisterSignals()            -- this still runs
+end
+```
+
+---
+
+### Debugger.IsAttached
+
+```lua
+attached = Debugger.IsAttached()
+```
+
+Returns `true` inside the editor, `false` in packaged builds. Use to gate debug-only diagnostics.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `attached` | `boolean` | Debugger is active |
+
+```lua
+if Debugger.IsAttached() then
+    Log.Debug("Running under the in-engine debugger")
+end
+```
+
+---
+
+## SignalBus
+
+`SignalBus` is a process-global event bus identified by string channel names. It survives scene transitions, making it ideal for cross-scene communication such as score events, audio signals, and UI updates.
+
+<Note>
+`SignalBus` is one of three signal systems in Polyphase. It does **not** interoperate with `Node:ConnectSignal` / `Node:EmitSignal` or `Signal` objects. Pick one system and stick with it per feature.
+</Note>
+
+### SignalBus.Subscribe
+
+```lua
+SignalBus.Subscribe(name, listener, func)
+```
+
+Registers a listener callback on a named channel. The listener node is always prepended as the first argument to `func` on every `Emit`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Channel/event name |
+| `listener` | `Node` | Node passed as the first argument to `func` on every emit |
+| `func` | `function` | Callback — signature: `function(listener, ...emittedArgs)` |
+
+<Warning>
+The listener node is always prepended before emitted arguments. `SignalBus.Emit("X", 5)` calls `func(listener, 5)`. Inline closures that forget the leading parameter will receive the listener node where they expect the first emitted value.
+</Warning>
+
+```lua
+-- Colon-method form — self is automatically the listener
+function HUD:Start()
+    SignalBus.Subscribe("ScoreChanged", self, HUD.OnScoreChanged)
+end
+
+function HUD:OnScoreChanged(score)
+    self.scoreText:SetText("Score: " .. tostring(score))
+end
+
+-- Inline closure — discard listener with `_`
+function HUD:Start()
+    SignalBus.Subscribe("ScoreChanged", self, function(_, score)
+        self.scoreText:SetText("Score: " .. tostring(score))
+    end)
+end
+
+-- WRONG — `score` receives the listener node, not the integer
+SignalBus.Subscribe("ScoreChanged", self, function(score)
+    -- score is a NodeWrapper userdata here, not a number!
+end)
+```
+
+---
+
+### SignalBus.Unsubscribe
+
+```lua
+SignalBus.Unsubscribe(name, listener)
+```
+
+Removes a listener from a channel.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Channel name |
+| `listener` | `Node` | Listener node to unsubscribe |
+
+---
+
+### SignalBus.Emit
+
+```lua
+ret0, ret1, ... = SignalBus.Emit(name, args...)
+```
+
+Emits a signal on the named channel, forwarding any arguments to all subscribed listeners. Returns any values returned by listeners.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Channel name |
+| `args...` | any | Payload values forwarded to all listeners |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `...` | any | Return values collected from listeners |
+
+```lua
+-- Broadcast a score change
+SignalBus.Emit("ScoreChanged", self.score)
+
+-- Query pattern — collect return values
+local difficulty = SignalBus.Emit("RequestDifficulty", "campaign")
+```
+
+---
+
+### SignalBus.Clear
+
+```lua
+SignalBus.Clear()
+```
+
+Removes all channels and listeners from the bus. Use with caution — this affects every system that has subscribed.
+
+---
+
+## Math
+
+The `Math` global provides framerate-independent smoothing, range mapping, random number generation, vector/rotation conversion, and common numeric utilities.
+
+### Math.Damp
+
+```lua
+value = Math.Damp(source, target, smoothing, deltaTime)
+```
+
+Smoothly moves `source` toward `target`. Framerate-independent. Works with both numbers and Vectors.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `source` | `Vector\|number` | Current value |
+| `target` | `Vector\|number` | Target value |
+| `smoothing` | `number` | Smoothing factor `(0–1)` — lower = slower. Try `0.005`. |
+| `deltaTime` | `number` | Delta time in seconds |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `value` | `number` | Smoothed result |
+
+```lua
+self.cameraPos = Math.Damp(self.cameraPos, target, 0.005, dt)
+```
+
+---
+
+### Math.DampAngle
+
+```lua
+value = Math.DampAngle(source, target, smoothing, deltaTime)
+```
+
+Like `Math.Damp` but handles the 0°/360° boundary correctly for angles in degrees.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `source` | `number` | Current angle in degrees |
+| `target` | `number` | Target angle in degrees |
+| `smoothing` | `number` | Smoothing factor |
+| `deltaTime` | `number` | Delta time in seconds |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `value` | `number` | Smoothed angle |
+
+---
+
+### Math.Approach
+
+```lua
+value = Math.Approach(source, target, speed, deltaTime)
+```
+
+Moves `source` toward `target` at a constant `speed`, stopping at `target`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `source` | `Vector\|number` | Current value |
+| `target` | `Vector\|number` | Target value |
+| `speed` | `number` | Movement rate per second |
+| `deltaTime` | `number` | Delta time in seconds |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `value` | `number` | Updated value |
+
+---
+
+### Math.ApproachAngle
+
+```lua
+value = Math.ApproachAngle(source, target, speed, deltaTime)
+```
+
+Like `Math.Approach` but for angles in degrees, handling the 0°/360° wrap.
+
+---
+
+### Math.Wrap
+
+```lua
+wrapped = Math.Wrap(value, start, end)
+```
+
+Wraps `value` into the range `[start, end)`. **Alias:** `Math.NormalizeRange`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `value` | `number` | Input value |
+| `start` | `number` | Range start |
+| `end` | `number` | Range end |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `wrapped` | `number` | Wrapped value |
+
+---
+
+### Math.Map
+
+```lua
+outX = Math.Map(inX, inMin, inMax, outMin, outMax)
+```
+
+Remaps `inX` from one range to another.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `inX` | `number` | Input value |
+| `inMin` | `number` | Input range minimum |
+| `inMax` | `number` | Input range maximum |
+| `outMin` | `number` | Output range minimum |
+| `outMax` | `number` | Output range maximum |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `outX` | `number` | Remapped value |
+
+---
+
+### Math.MapClamped
+
+```lua
+outX = Math.MapClamped(inX, inMin, inMax, outMin, outMax)
+```
+
+Like `Math.Map` but clamps the output to `[outMin, outMax]`.
+
+---
+
+### Math.Clamp
+
+```lua
+clamped = Math.Clamp(value, min, max)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `value` | `integer\|number` | Input value |
+| `min` | `integer\|number` | Minimum |
+| `max` | `integer\|number` | Maximum |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `clamped` | `integer\|number` | Clamped value |
+
+---
+
+### Math.Lerp
+
+```lua
+res = Math.Lerp(a, b, alpha)
+```
+
+Linearly interpolates between `a` and `b` by `alpha` in `[0, 1]`. **Alias:** `Math.Mix`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `a` | `number` | Start value |
+| `b` | `number` | End value |
+| `alpha` | `number` | Interpolation ratio |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `res` | `number` | Interpolated result |
+
+---
+
+### Math.Min / Math.Max
+
+```lua
+min = Math.Min(a, b)
+max = Math.Max(a, b)
+```
+
+Return the smaller or larger of two values.
+
+---
+
+### Math.Sign
+
+```lua
+sign = Math.Sign(value)
+```
+
+Returns `1` for non-negative values and `-1` for negative values.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `value` | `integer\|number` | Input |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `sign` | `integer\|number` | `-1` or `1` |
+
+---
+
+### Math.IsPowerOfTwo
+
+```lua
+pow2 = Math.IsPowerOfTwo(value)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `value` | `integer` | Value to test |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `pow2` | `boolean` | Whether the value is a power of two |
+
+---
+
+### Math.Reflect
+
+```lua
+res = Math.Reflect(incident, normal)
+```
+
+Reflects a vector against a surface normal.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `incident` | `Vector` | Incident direction |
+| `normal` | `Vector` | Surface normal |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `res` | `Vector` | Reflected vector |
+
+---
+
+### Math.VectorToRotation
+
+```lua
+rotEuler = Math.VectorToRotation(vector)
+```
+
+Converts a direction vector to Euler angles (degrees) such that the forward vector `(0,0,-1)` maps to the input direction.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `vector` | `Vector` | Input direction |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `rotEuler` | `Vector` | Euler angles in degrees |
+
+---
+
+### Math.VectorToQuat
+
+```lua
+rotQuat = Math.VectorToQuat(vector)
+```
+
+Like `VectorToRotation` but returns a quaternion.
+
+---
+
+### Math.RotationToVector
+
+```lua
+vect = Math.RotationToVector(rotEuler)
+```
+
+Converts Euler angles (degrees) to a normalized direction vector.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `rotEuler` | `Vector` | Euler rotation in degrees |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `vect` | `Vector` | Equivalent direction vector |
+
+---
+
+### Math.QuatToVector
+
+```lua
+vect = Math.QuatToVector(rotQuat)
+```
+
+Converts a quaternion to a normalized direction vector.
+
+---
+
+### Math.RotateYawTowardDirection
+
+```lua
+resYaw = Math.RotateYawTowardDirection(srcYaw, dir, speed, deltaTime)
+```
+
+Rotates a yaw angle toward a 3D direction at a given angular speed. Useful for rotating characters to face their movement direction.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `srcYaw` | `number` | Source yaw in degrees |
+| `dir` | `Vector` | Target direction |
+| `speed` | `number` | Angular speed in degrees/second |
+| `deltaTime` | `number` | Delta time in seconds |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `resYaw` | `number` | Updated yaw in degrees |
+
+---
+
+### Random Number Generation
+
+```lua
+Math.SeedRand(seed)           -- seed the RNG
+random  = Math.Rand()         -- number in [0, 1]
+rand    = Math.RandRange(min, max)      -- number in [min, max]
+rand    = Math.RandRangeInt(min, max)   -- integer in [min, max]
+rand    = Math.RandRangeVec(min, max)   -- Vector in [min, max]
+```
+
+| Function | Return type | Description |
+|----------|-------------|-------------|
+| `Math.SeedRand(seed)` | — | Seeds the RNG with an integer |
+| `Math.Rand()` | `number` | Random float in `[0, 1]` |
+| `Math.RandRange(min, max)` | `number` | Random float in `[min, max]` |
+| `Math.RandRangeInt(min, max)` | `integer` | Random integer in `[min, max]` |
+| `Math.RandRangeVec(min, max)` | `Vector` | Random vector, component-wise |
+
+```lua
+-- Random spawn spread
+local offset = Math.RandRangeVec(Vec(-5,0,-5), Vec(5,0,5))
+world:SpawnNode("Enemy", spawnPoint + offset)
+```
+
+---
+
+## LoadingMenu
+
+`LoadingMenu` manages loading-screen scene transitions. It overlays a designer-authored loading scene on top of the world while the target gameplay scene loads underneath.
+
+<Note>
+`LoadingMenu` only operates on world index `0` (the main game world). Calls with a non-zero world index fall through to a direct `world:LoadScene`.
+</Note>
+
+### LoadingMenu.SetMenuScene
+
+```lua
+LoadingMenu.SetMenuScene(sceneName)
+```
+
+Selects which `Scene` asset to use as the loading screen for the next `Open` call. Pass `""` to fall back to the `AppSettings` default.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `sceneName` | `string` | Scene asset name (e.g. `"SC_LoadingSciFi"`) or `""` for default |
+
+---
+
+### LoadingMenu.GetMenuScene
+
+```lua
+name = LoadingMenu.GetMenuScene()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `name` | `string` | Override scene name, or `""` if using the default |
+
+---
+
+### LoadingMenu.Open
+
+```lua
+started = LoadingMenu.Open(targetSceneName, worldIndex)
+```
+
+Begins a loading-screen transition to `targetSceneName`. The engine overlays the loading scene, then swaps in the target scene underneath.
+
+<Warning>
+`Open` is rejected (returns `false`) if a transition is already in progress. Call `Close()` first if you need to interrupt a running transition.
+</Warning>
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `targetSceneName` | `string` | — | Scene to load underneath the menu |
+| `worldIndex` | `integer` | `0` | Target world index; only world `0` shows the loading menu |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `started` | `boolean` | `true` if the loading menu opened; `false` if it fell through to a direct load |
+
+```lua
+function MainMenu:OnPlayClicked()
+    LoadingMenu.SetMenuScene("")        -- use project default
+    LoadingMenu.Open("SC_World1")
+end
+
+-- Or with a custom loading screen
+LoadingMenu.SetMenuScene("SC_LoadingSciFi")
+LoadingMenu.Open("SC_Level2")
+```
+
+---
+
+### LoadingMenu.Close
+
+```lua
+LoadingMenu.Close()
+```
+
+Requests the loading menu to tear down. Typically called by the loading scene when its outro animation finishes. Gated by the `Loading Min Display (s)` AppSettings value — if the minimum display time has not elapsed, the close is queued until it does.
+
+```lua
+function LoadingScreen:Start()
+    SignalBus.Subscribe("Loading.Finished", self, function(_)
+        self:PlayOutroAnimation(function()
+            LoadingMenu.Close()
+        end)
+    end)
+end
+```
+
+---
+
+### LoadingMenu.IsActive
+
+```lua
+active = LoadingMenu.IsActive()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `active` | `boolean` | `true` while in `Loading` or `Closing` state |
+
+---
+
+### LoadingMenu.GetState
+
+```lua
+state = LoadingMenu.GetState()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `state` | `string` | `"Idle"`, `"Loading"`, or `"Closing"` |
+
+---
+
+### LoadingMenu.GetTargetScene
+
+```lua
+name = LoadingMenu.GetTargetScene()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `name` | `string` | Scene being loaded, or `""` when idle |
+
+---
+
+### SignalBus Channels (Loading.*)
+
+The `Loading.*` namespace is reserved for loading-screen communication between the target scene and the loading scene.
+
+| Channel | Direction | Payload | Meaning |
+|---------|-----------|---------|---------|
+| `Loading.Progress.Percentage` | Target → Loading | `number` 0–1 | Progress bar value |
+| `Loading.Progress.Info` | Target → Loading | `string` | Status text (e.g. `"Loading meshes..."`) |
+| `Loading.Finished` | Target → Loading | none | Target is fully ready; play outro |
+| `Loading.MinDisplayElapsed` | Engine → Loading | none | Min display gate has opened |
+
+```lua
+-- Target scene reports loading progress
+function Level2:Start()
+    SignalBus.Emit("Loading.Progress.Info", "Loading meshes")
+    SignalBus.Emit("Loading.Progress.Percentage", 0.0)
+end
+
+function Level2:Tick(dt)
+    if not self.done then
+        local pct = self:DoOneStep()
+        SignalBus.Emit("Loading.Progress.Percentage", pct)
+        if pct >= 1.0 then
+            self.done = true
+            SignalBus.Emit("Loading.Finished")
+        end
+    end
+end
+
+-- Loading scene drives a progress bar
+function LoadingScreen:Start()
+    SignalBus.Subscribe("Loading.Progress.Percentage", self, function(_, pct)
+        self.progressBar:SetValue(pct)
+    end)
+    SignalBus.Subscribe("Loading.Progress.Info", self, function(_, text)
+        self.statusText:SetText(text)
+    end)
+    SignalBus.Subscribe("Loading.Finished", self, function(_)
+        self:PlayOutroThen(function() LoadingMenu.Close() end)
+    end)
+end
+```

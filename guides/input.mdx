@@ -1,0 +1,372 @@
+---
+title: "Input System in Polyphase Engine"
+sidebarTitle: "Input"
+description: "Master the Polyphase input system: keyboard, mouse, gamepad, and touch APIs across all platforms including GameCube, Wii, 3DS, and Android."
+---
+
+Polyphase Engine provides a unified, polling-based input API that works across every supported platform. Instead of registering event callbacks, you query input state each frame — typically inside your script's `Tick()` function. All input functions live on the global `Input` table in Lua. Constants for keys, mouse buttons, and gamepad buttons live on the `Key`, `Mouse`, and `Gamepad` tables respectively.
+
+## Platform Support Matrix
+
+| Feature | Windows | Linux | GameCube | Wii | 3DS | Android |
+|---|---|---|---|---|---|---|
+| Keyboard | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| Mouse | ✅ | ✅ | ❌ | ✅* | ❌ | ✅ |
+| Touch / Pointer | ✅ | ✅ | ❌ | ✅* | ✅ | ✅ |
+| Gamepad | ✅ | ✅ | ✅ | ✅ | ✅ | ✅** |
+| Accelerometer | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
+| Gyroscope | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+
+\* Wii IR pointer is exposed through the mouse and touch APIs.  
+\*\* Android gamepad support exists but button mapping is incomplete.
+
+## State Check Model
+
+Every input type supports three state checks:
+
+```lua
+-- Down — held continuously this frame and last frame
+if Input.IsKeyDown(Key.W) then
+    moveForward()
+end
+
+-- Pressed — true only on the single frame the input first goes down
+if Input.IsKeyPressed(Key.Space) then
+    jump()
+end
+
+-- Released — true only on the single frame the input is let go
+if Input.IsKeyReleased(Key.Space) then
+    stopJump()
+end
+```
+
+<Note>
+Lua indices for gamepads and touch points are **1-based** (gamepad 1 is the first controller, touch index 1 is the first touch). The underlying C++ API is 0-based. The Lua bindings handle this conversion automatically.
+</Note>
+
+---
+
+<Tabs>
+  <Tab title="Keyboard">
+
+Keyboard input is available on **Windows**, **Linux**, and **Android**. It is not available on GameCube, Wii, or 3DS.
+
+### Core Key Functions
+
+```lua
+-- Is key currently held?
+Input.IsKeyDown(Key.W)
+
+-- Was key pressed this frame only?
+Input.IsKeyPressed(Key.Space)
+Input.IsKeyJustDown(Key.Space)     -- alias
+
+-- Was key released this frame only?
+Input.IsKeyReleased(Key.E)
+Input.IsKeyJustUp(Key.E)           -- alias
+
+-- Held + OS key-repeat (useful for menus and text fields)
+Input.IsKeyPressedRepeat(Key.Down)
+Input.IsKeyJustDownRepeat(Key.Down) -- alias
+
+-- Convenience modifier helpers
+Input.IsControlDown()
+Input.IsShiftDown()
+```
+
+### Text Input
+
+```lua
+-- Get all keys pressed this frame as an array of key codes
+local keys = Input.GetKeysPressed()
+for i, keyCode in ipairs(keys) do
+    local char = Input.ConvertKeyCodeToChar(keyCode)
+    textBuffer = textBuffer .. char
+end
+
+-- True if any key was pressed this frame
+if Input.IsAnyKeyJustDown() then
+    dismissSplash()
+end
+```
+
+### Key Table Reference (selection)
+
+| Lua constant | Description |
+|---|---|
+| `Key.A` – `Key.Z` | Letter keys |
+| `Key.N0` – `Key.N9` / `Key.Zero` – `Key.Nine` | Number row |
+| `Key.F1` – `Key.F12` | Function keys |
+| `Key.Space`, `Key.Enter`, `Key.Escape`, `Key.Tab`, `Key.Backspace` | Common keys |
+| `Key.ShiftL`, `Key.ShiftR`, `Key.ControlL`, `Key.ControlR`, `Key.AltL`, `Key.AltR` | Modifiers |
+| `Key.Up`, `Key.Down`, `Key.Left`, `Key.Right` | Arrow keys |
+| `Key.Numpad0` – `Key.Numpad9`, `Key.Decimal` | Numpad |
+| `Key.Insert`, `Key.Delete`, `Key.Home`, `Key.End`, `Key.PageUp`, `Key.PageDown` | Navigation |
+| `Key.Back` | Back button (Android) |
+
+### Platform Notes
+
+- **GameCube / Wii**: No keyboard support.
+- **3DS**: No physical keyboard. Several `Key` table entries conflict with 3DS gamepad button names (`Key.A`, `Key.B`, `Key.X`, `Key.Y`, direction keys) and resolve to `0`. Use gamepad functions instead.
+- **Android**: Hardware and software keyboards are both supported. Call `Input.ShowSoftKeyboard(true)` to bring up the on-screen keyboard.
+
+</Tab>
+<Tab title="Mouse">
+
+Mouse input is available on **Windows**, **Linux**, **Wii** (IR pointer), and **Android**. It is not available on GameCube or 3DS.
+
+### Mouse Button Functions
+
+```lua
+-- Is button held?
+Input.IsMouseDown(Mouse.Left)
+Input.IsMouseButtonDown(Mouse.Left)    -- alias
+
+-- Was button pressed this frame?
+Input.IsMousePressed(Mouse.Left)
+Input.IsMouseButtonJustDown(Mouse.Left) -- alias
+
+-- Was button released this frame?
+Input.IsMouseReleased(Mouse.Left)
+Input.IsMouseButtonJustUp(Mouse.Left)   -- alias
+```
+
+### Mouse Button Constants
+
+| Constant | Description |
+|---|---|
+| `Mouse.Left` | Primary button |
+| `Mouse.Right` | Secondary button |
+| `Mouse.Middle` | Middle / scroll-wheel click |
+| `Mouse.X1` | Extra button 4 |
+| `Mouse.X2` | Extra button 5 |
+
+### Position and Delta
+
+```lua
+-- Absolute pixel position relative to the window
+local x, y = Input.GetMousePosition()
+
+-- Movement since the last frame — use for camera look
+local dx, dy = Input.GetMouseDelta()
+
+-- Scroll wheel: +1 up, -1 down
+local scroll = Input.GetScrollWheelDelta()
+```
+
+### Cursor Control
+
+```lua
+Input.ShowCursor(false)    -- Hide OS cursor
+Input.LockCursor(true)     -- Lock to window center; use GetMouseDelta() for look
+Input.TrapCursor(true)     -- Prevent cursor leaving the window
+Input.SetCursorPosition(400, 300)
+```
+
+### FPS Mouse-Look Example
+
+This pattern is used in the built-in `FirstPersonController.lua`:
+
+```lua
+function MyController:Start()
+    Input.LockCursor(true)
+    Input.TrapCursor(true)
+    Input.ShowCursor(false)
+end
+
+function MyController:Stop()
+    Input.LockCursor(false)
+    Input.TrapCursor(false)
+    Input.ShowCursor(true)
+end
+
+function MyController:Tick(deltaTime)
+    local dx, dy = Input.GetMouseDelta()
+
+    local rot = self:GetRotation()
+    rot.y = rot.y - dx * self.lookSpeed * deltaTime
+    self:SetRotation(rot)
+end
+```
+
+### Platform Notes
+
+- **GameCube**: No mouse support.
+- **3DS**: No mouse support. Use touch input instead.
+- **Wii**: The Wii IR pointer is exposed through the **touch** API, not the mouse API.
+
+</Tab>
+<Tab title="Gamepad">
+
+Gamepad input is available on **all platforms**. Up to four controllers can be connected simultaneously.
+
+### Button State Functions
+
+```lua
+-- Is button held? (second arg is gamepad index 1–4, defaults to 1)
+Input.IsGamepadDown(Gamepad.A, 1)
+Input.IsGamepadButtonDown(Gamepad.A, 1)    -- alias
+
+-- Was button pressed this frame?
+Input.IsGamepadPressed(Gamepad.A)
+Input.IsGamepadButtonJustDown(Gamepad.A)   -- alias
+
+-- Was button released this frame?
+Input.IsGamepadReleased(Gamepad.B)
+Input.IsGamepadButtonJustUp(Gamepad.B)     -- alias
+```
+
+### Analog Axis Reading
+
+Stick axes return **−1.0 to 1.0** (positive X = right, positive Y = up). Trigger axes return **0.0 to 1.0**.
+
+```lua
+local lx = Input.GetGamepadAxis(Gamepad.AxisLX, 1)
+local ly = Input.GetGamepadAxis(Gamepad.AxisLY, 1)
+local lt = Input.GetGamepadAxis(Gamepad.AxisL,  1)  -- left trigger
+local rt = Input.GetGamepadAxis(Gamepad.AxisR,  1)  -- right trigger
+```
+
+### Deadzone Handling
+
+Analog sticks rarely rest at exactly 0. Always apply a deadzone to prevent drift:
+
+```lua
+local deadzone = 0.1
+local lx = Input.GetGamepadAxis(Gamepad.AxisLX)
+local ly = Input.GetGamepadAxis(Gamepad.AxisLY)
+
+if math.abs(lx) < deadzone then lx = 0.0 end
+if math.abs(ly) < deadzone then ly = 0.0 end
+```
+
+### Button Reference
+
+| Constant | Description |
+|---|---|
+| `Gamepad.A`, `.B`, `.X`, `.Y` | Face buttons |
+| `Gamepad.C`, `.Z` | GameCube / Nunchuk C and Z buttons |
+| `Gamepad.L1`, `.R1` | Shoulder / bumper |
+| `Gamepad.L2`, `.R2` | Triggers (as digital buttons) |
+| `Gamepad.L3`, `.R3` | Stick clicks |
+| `Gamepad.Start`, `.Select`, `.Home` | System buttons |
+| `Gamepad.Up`, `.Down`, `.Left`, `.Right` | D-pad |
+| `Gamepad.LsLeft`, `.LsRight`, `.LsUp`, `.LsDown` | Left stick as digital directions (threshold 0.5) |
+| `Gamepad.RsLeft`, `.RsRight`, `.RsUp`, `.RsDown` | Right stick as digital directions (threshold 0.5) |
+
+### Connection and Type Detection
+
+```lua
+if Input.IsGamepadConnected(1) then
+    local padType = Input.GetGamepadType(1)
+    -- Returns: "Standard", "GameCube", "Wiimote", "WiiClassic"
+    if padType == "GameCube" then
+        showGCControls()
+    end
+end
+```
+
+### Multi-Player Example
+
+```lua
+local p1Jump = Input.IsGamepadPressed(Gamepad.A, 1)
+local p2Jump = Input.IsGamepadPressed(Gamepad.A, 2)
+```
+
+### Platform Notes
+
+- **Windows**: XInput. Xbox controllers work natively. Up to 4 pads.
+- **Linux**: `/dev/input/js*` joystick API. Up to 4 pads.
+- **GameCube**: GameCube controller only. 4 controller ports. `GetGamepadType()` returns `"GameCube"`.
+- **Wii**: Supports Wiimote, Wiimote + Nunchuk, Classic Controller, and GameCube controllers. Type auto-detects from the buttons that have been pressed.
+- **3DS**: Built-in controls always connected on gamepad port 1 (Lua) / index 0 (C++). The Circle Pad, face buttons, shoulder buttons, D-pad, Start, and Select are all mapped.
+- **Android**: Gamepad support exists but button mapping is incomplete.
+
+</Tab>
+<Tab title="Touch">
+
+Touch input is available on **Windows**, **Linux**, **Wii**, **3DS**, and **Android**. It is not available on GameCube.
+
+### Raw Touch Functions
+
+Up to **four simultaneous touch points** are tracked. Indices are **1-based** in Lua.
+
+```lua
+-- Is touch point active?
+if Input.IsTouchDown(1) then
+    -- First touch is active
+end
+
+-- Pixel coordinates
+local x, y = Input.GetTouchPosition(1)
+
+-- Normalized coordinates (-1.0 to 1.0, center = 0,0)
+local nx, ny = Input.GetTouchPositionNormalized(1)
+```
+
+### Pointer API (Unified Mouse + Touch)
+
+The Pointer API abstracts over both mouse and touch so the same code works on desktop (where pointers come from the mouse) and mobile / console (where pointers come from the touchscreen).
+
+```lua
+-- Is pointer down?
+Input.IsPointerDown()
+Input.IsPointerPressed()    -- just went down this frame
+Input.IsPointerReleased()   -- just went up this frame
+
+-- Position
+local x,  y  = Input.GetPointerPosition()
+local nx, ny = Input.GetPointerPositionNormalized()
+```
+
+### Cross-Platform Button Example
+
+```lua
+function CheckButton(bx, by, bw, bh)
+    if Input.IsPointerPressed() then
+        local px, py = Input.GetPointerPosition()
+        if px >= bx and px <= bx + bw and
+           py >= by and py <= by + bh then
+            return true
+        end
+    end
+    return false
+end
+```
+
+### Platform Notes
+
+- **Windows / Linux**: Touch maps to mouse input. Pointer functions use the mouse.
+- **3DS**: Single touch point on the bottom screen only. Touch index 1 (Lua) / 0 (C++). The top screen is display-only.
+- **Wii**: Each Wiimote's IR pointer maps to a separate touch point. Wiimote channel 0 → touch index 1 in Lua, channel 1 → touch index 2, etc.
+- **Android**: Full multitouch support, up to 4 simultaneous points.
+
+</Tab>
+</Tabs>
+
+---
+
+## High-Level PlayerInput System
+
+For action-based input — binding multiple physical inputs to a named action, supporting hold, double-tap, and analog modes, and supporting runtime remapping — use the `PlayerInput` system.
+
+```lua
+-- Register actions (typically during startup)
+PlayerInput.RegisterAction("Platformer", "Jump", {
+    trigger  = "SinglePress",
+    bindings = {
+        { type = "Key",     key    = Key.Space  },
+        { type = "Gamepad", button = Gamepad.A  },
+    }
+})
+
+-- Query in Tick
+function MyScript:Tick(deltaTime)
+    if PlayerInput.WasJustActivated("Platformer", "Jump") then
+        self:Jump()
+    end
+end
+```
+
+Actions can also be defined and remapped visually in **Edit > App Settings > Input > Edit Player Inputs** and saved to `InputActions.json` in your project directory.

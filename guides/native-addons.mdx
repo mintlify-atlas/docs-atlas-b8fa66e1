@@ -1,0 +1,405 @@
+---
+title: "Creating Native C++ Addons for Polyphase Engine"
+sidebarTitle: "Native Addons"
+description: "Extend Polyphase Engine with C++ addons: register custom nodes, expose Lua bindings, build editor tools, and compile into final console or desktop builds."
+---
+
+Native addons are extensions of the standard addon format that include C++ source code. They compile into shared libraries (`.dll`/`.so`/`.dylib`) that the editor hot-loads on Windows and Linux, and are statically linked into the final executable for console builds (Wii, GameCube, 3DS). Native addons can register custom node types, expose new Lua functions, extend the editor UI with ImGui windows and menus, and integrate with engine lifecycle events.
+
+## Addon Directory Structure
+
+```
+MyAddon/
+    package.json          # Required: addon metadata with a "native" block
+    thumbnail.png         # Optional: preview image (256×256)
+    Assets/               # Optional: textures, meshes, etc.
+    Scripts/              # Optional: Lua scripts
+    Source/               # Required for native: C++ source code
+        MyAddon.cpp       # Plugin entry point
+        include/          # Optional: header files
+        src/              # Optional: additional source files
+```
+
+Place your addon in `{YourProject}/Packages/MyAddon/` for local development. No installation step is required — the editor discovers and builds it automatically when you run **Tools → Addons → Reload Native Addons**.
+
+## package.json — The `native` Block
+
+The `package.json` file must include a `native` block to enable native code support:
+
+```json
+{
+    "name": "My Native Addon",
+    "author": "Your Name",
+    "description": "Description of what your addon does.",
+    "version": "1.0.0",
+    "updated": "2024-01-15",
+    "tags": ["gameplay", "tools"],
+    "native": {
+        "target": "engine",
+        "sourceDir": "Source",
+        "binaryName": "myaddon",
+        "entrySymbol": "PolyphasePlugin_GetDesc",
+        "apiVersion": 3
+    }
+}
+```
+
+### Native Block Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `target` | string | `"engine"` | Where the code runs — `"engine"` or `"editor"` |
+| `sourceDir` | string | `"Source"` | Relative path to C++ source directory |
+| `binaryName` | string | Required | Output binary name (no extension) |
+| `entrySymbol` | string | `"PolyphasePlugin_GetDesc"` | Exported entry-point function name |
+| `apiVersion` | integer | `1` | Must match `POLYPHASE_PLUGIN_API_VERSION` (currently **9**) |
+
+### Target: `engine` vs `editor`
+
+| Value | Hot-Load in Editor | Compiled into Final Builds | Use Case |
+|-------|-------------------|---------------------------|----------|
+| `"engine"` | ✓ | ✓ | Gameplay code, custom nodes, runtime systems |
+| `"editor"` | ✓ | ✗ | Debug tools, editor extensions, authoring helpers |
+
+## Plugin Entry Point
+
+Every native addon exports a single function, `PolyphasePlugin_GetDesc`, that fills in a `PolyphasePluginDesc` struct. The function signature and macros are defined in `Engine/Source/Plugins/PolyphasePluginAPI.h`.
+
+```cpp
+#include "PolyphasePluginAPI.h"
+
+static PolyphaseEngineAPI* sAPI = nullptr;
+
+static int OnLoad(PolyphaseEngineAPI* api)
+{
+    sAPI = api;
+    api->LogDebug("MyAddon: Loaded successfully!");
+    return 0;  // 0 = success
+}
+
+static void OnUnload()
+{
+    if (sAPI) { sAPI->LogDebug("MyAddon: Unloading..."); }
+    sAPI = nullptr;
+    // IMPORTANT: after this returns, your code is unloaded.
+    // Ensure no dangling pointers or callbacks remain.
+}
+
+static void Tick(float deltaTime)
+{
+    // Called every frame during gameplay (PIE or built game)
+}
+
+static void TickEditor(float deltaTime)
+{
+    // Called every frame in the editor, regardless of play state
+}
+
+static int FillDesc(PolyphasePluginDesc* desc)
+{
+    desc->apiVersion    = POLYPHASE_PLUGIN_API_VERSION;
+    desc->pluginName    = "My Addon";
+    desc->pluginVersion = "1.0.0";
+
+    desc->OnLoad   = OnLoad;
+    desc->OnUnload = OnUnload;
+    desc->Tick       = Tick;
+    desc->TickEditor = TickEditor;
+
+    desc->RegisterTypes      = nullptr;
+    desc->RegisterScriptFuncs = nullptr;
+    desc->RegisterEditorUI   = nullptr;
+    desc->OnEditorPreInit    = nullptr;
+    desc->OnEditorReady      = nullptr;
+    return 0;
+}
+
+#if EDITOR
+extern "C" POLYPHASE_PLUGIN_API int PolyphasePlugin_GetDesc(PolyphasePluginDesc* desc)
+{
+    return FillDesc(desc);
+}
+#else
+// Shipped build: suffix is the sanitized addon id (non-alphanumerics → '_').
+// The editor generates AddonPlugins.cpp with a matching POLYPHASE_REGISTER_PLUGIN.
+// Do NOT write the macro yourself.
+extern "C" int PolyphasePlugin_GetDesc_myaddon(PolyphasePluginDesc* desc)
+{
+    return FillDesc(desc);
+}
+#endif
+```
+
+<Note>
+  The current `POLYPHASE_PLUGIN_API_VERSION` is **9**. Legacy snippets showing version 2 or 3 are stale. Always read the canonical value from `Engine/Source/Plugins/PolyphasePluginAPI.h` rather than hard-coding it. The API has been additive since v2, so older plugins still load — new fields that weren't set are zero-initialized by the engine.
+</Note>
+
+## PolyphasePluginDesc Reference
+
+```cpp
+struct PolyphasePluginDesc
+{
+    uint32_t    apiVersion;       // Must match POLYPHASE_PLUGIN_API_VERSION
+    const char* pluginName;       // Human-readable name
+    const char* pluginVersion;    // Version string, e.g. "1.0.0"
+
+    // Lifecycle
+    int  (*OnLoad)(PolyphaseEngineAPI* api);  // Return 0 on success
+    void (*OnUnload)();
+
+    // Tick callbacks (nullptr if not needed)
+    void (*Tick)(float deltaTime);       // Gameplay only (PIE or built game)
+    void (*TickEditor)(float deltaTime); // Editor always (editor builds only)
+
+    // Registration (called after OnLoad)
+    void (*RegisterTypes)(void* nodeFactory);
+    void (*RegisterScriptFuncs)(struct lua_State* L);
+
+    // Editor UI extension (set nullptr for engine-only addons)
+    void (*RegisterEditorUI)(EditorUIHooks* hooks, uint64_t hookId);
+
+    // Editor lifecycle (set nullptr if not needed)
+    void (*OnEditorPreInit)(); // Before editor ImGui is fully initialized
+    void (*OnEditorReady)();   // After editor is fully initialized
+};
+```
+
+### Tick Callback Summary
+
+| Callback | When Called | Use Case |
+|----------|-------------|----------|
+| `Tick` | During gameplay only (PIE or built game) | Gameplay logic, physics, AI |
+| `TickEditor` | Every frame in editor, regardless of play state | Debug overlays, editor tools |
+
+In shipped (non-editor) builds, `TickEditor` is never called — only `Tick` runs.
+
+## Hot-Reloading in the Editor
+
+The editor compiles and reloads native addons on Windows and Linux without a restart. Use **Tools → Addons → Reload Native Addons** after editing C++ source. Changes take effect immediately.
+
+<Warning>
+  Hot-reloading unloads your code while the editor is running. Follow these rules to avoid crashes:
+  - Always unregister callbacks in `OnUnload()`
+  - Do not store raw pointers to plugin data in engine objects
+  - Do not create threads that outlive the plugin
+  - Do not use static variables that persist state across reloads (use engine systems for persistent data instead)
+</Warning>
+
+**Safe callback unregistration pattern:**
+
+```cpp
+static void* sCallbackHandle = nullptr;
+
+static int OnLoad(PolyphaseEngineAPI* api)
+{
+    sCallbackHandle = SomeSystem::RegisterCallback(MyCallback);
+    return 0;
+}
+
+static void OnUnload()
+{
+    if (sCallbackHandle)
+    {
+        SomeSystem::UnregisterCallback(sCallbackHandle);
+        sCallbackHandle = nullptr;
+    }
+}
+```
+
+## Registering Custom Node Types
+
+Custom nodes registered from an addon appear in the editor's **Add Node** menu and can be used in scenes just like built-in nodes.
+
+```cpp
+#include "PolyphasePluginAPI.h"
+#include "Node.h"
+
+class MyCustomNode : public Node3D
+{
+    DECLARE_NODE(MyCustomNode, Node3D);
+public:
+    virtual void Tick(float deltaTime) override
+    {
+        // Custom behavior here
+    }
+};
+
+DEFINE_NODE(MyCustomNode, Node3D);
+
+static void RegisterTypes(void* nodeFactory)
+{
+    FORCE_LINK_CALL(MyCustomNode);
+}
+```
+
+In `FillDesc`:
+```cpp
+desc->RegisterTypes = RegisterTypes;
+```
+
+<Note>
+  Custom node types require careful hot-reload handling. Existing instances in the scene become invalid after `OnUnload()`. Save and restore your scene state if needed.
+</Note>
+
+## Exposing Lua Functions
+
+Use `RegisterScriptFuncs` to add functions callable from Lua scripts. Use the `sAPI->Lua_*` wrappers rather than calling `lua_*` functions directly — this avoids linking against Lua separately.
+
+```cpp
+static int Lua_MyFunction(lua_State* L)
+{
+    const char* message = sAPI->LuaL_checkstring(L, 1);
+    sAPI->LogDebug("MyAddon: %s", message);
+    sAPI->Lua_pushboolean(L, true);
+    return 1;  // number of return values
+}
+
+static void RegisterScriptFuncs(lua_State* L)
+{
+    sAPI->Lua_createtable(L, 0, 1);
+    sAPI->Lua_pushcfunction(L, Lua_MyFunction);
+    sAPI->Lua_setfield(L, -2, "MyFunction");
+    sAPI->Lua_setglobal(L, "MyAddon");
+}
+```
+
+Usage from Lua:
+
+```lua
+MyAddon.MyFunction("Hello from Lua!")
+```
+
+## Example: Coin Rotation Addon
+
+The **Coin** example addon rotates `Node3D` objects continuously in C++ with no Lua overhead per frame, using the `Tick` callback and the `PolyphaseEngineAPI` to call `Node3D_AddRotation` directly.
+
+**package.json:**
+
+```json
+{
+    "name": "Coin",
+    "author": "Polyphase Examples",
+    "description": "Continuously rotates objects with configurable speed and axis.",
+    "version": "1.0.0",
+    "tags": ["gameplay", "utility"],
+    "native": {
+        "target": "engine",
+        "sourceDir": "Source",
+        "binaryName": "Coin",
+        "apiVersion": 3
+    }
+}
+```
+
+The addon manages a global list of `CoinData` structs, each holding a `Node3D*` and per-axis speeds. The `PluginTick` callback iterates the list and calls `sEngineAPI->Node3D_AddRotation` on each active node.
+
+**Lua usage:**
+
+```lua
+function RotatingCube:Create()
+    self.Coin = Coin.Create(self)
+    self.Coin:SetSpeed(0, 90, 0)  -- 90 degrees/sec on Y axis
+end
+
+function RotatingCube:Destroy()
+    if self.Coin then
+        self.Coin:Destroy()
+        self.Coin = nil
+    end
+end
+```
+
+## Example: Custom Debug Window (Editor Addon)
+
+The **Custom Debug Window** example creates a dockable ImGui window with `target: "editor"`. It will not be compiled into final game builds.
+
+**package.json:**
+
+```json
+{
+    "name": "Custom Debug Window",
+    "author": "Polyphase Examples",
+    "description": "Debug window showing scene hierarchy and selected object transforms.",
+    "version": "1.0.0",
+    "tags": ["editor", "debug", "tools"],
+    "native": {
+        "target": "editor",
+        "sourceDir": "Source",
+        "binaryName": "debugwindow",
+        "apiVersion": 3
+    }
+}
+```
+
+The addon registers its window and menu item in `RegisterEditorUI`:
+
+```cpp
+static void RegisterEditorUI(EditorUIHooks* hooks, uint64_t hookId)
+{
+    hooks->RegisterWindow(hookId, "Scene Debug", "debugwindow_main",
+                          DrawDebugWindow, nullptr);
+
+    hooks->AddMenuItem(hookId, "Tools", "Scene Debug Window",
+                       OnOpenDebugWindow, nullptr, "Ctrl+Shift+D");
+}
+```
+
+## Per-Platform Build Configuration
+
+Use the `nativePerPlatform` block to add platform-specific compiler and linker settings without polluting other targets. Platform names are case-sensitive.
+
+```json
+{
+    "native": {
+        "target": "engine",
+        "sourceDir": "Source",
+        "binaryName": "com.example.myaudio",
+        "apiVersion": 3
+    },
+    "nativePerPlatform": {
+        "Windows": {
+            "extraDefines":     ["MYAUDIO_WITH_FFMPEG=1"],
+            "extraIncludeDirs": ["External/ffmpeg/include"],
+            "extraLibDirs":     ["External/ffmpeg/lib"],
+            "extraLibs":        ["avformat.lib", "avcodec.lib", "avutil.lib"],
+            "copyBinaries":     ["External/ffmpeg/bin"]
+        },
+        "Linux": {
+            "extraDefines": ["MYAUDIO_WITH_FFMPEG=1"]
+        },
+        "GameCube": {},
+        "Wii": {},
+        "3DS": {}
+    }
+}
+```
+
+Recognised platform names: `"Windows"`, `"Linux"`, `"Mac"`, `"Android"`, `"GameCube"`, `"Wii"`, `"3DS"`.
+
+Use `#if` guards in source to keep the binary link-complete everywhere:
+
+```cpp
+#if PLATFORM_WINDOWS || PLATFORM_LINUX
+    // FFmpeg path
+#elif PLATFORM_DOLPHIN
+    // GameCube/Wii native decoder
+#elif PLATFORM_3DS
+    // 3DS native decoder
+#endif
+```
+
+## Final Build (Console) Integration
+
+For console targets, native addons are compiled directly into the executable — no dynamic loading occurs. The editor generates `Generated/AddonPlugins.cpp` with `POLYPHASE_REGISTER_PLUGIN` calls for each enabled addon. Run **Tools → Addons → Regenerate Native Addon Dependencies** after adding, removing, or renaming an addon, or the shipped build will fail to link.
+
+The shipped-build entry-point symbol uses a sanitized version of the addon ID: non-alphanumeric characters become underscores. For example, `com.example.myaddon` → `PolyphasePlugin_GetDesc_com_example_myaddon`.
+
+## IDE Configuration
+
+The editor generates IDE configuration files for IntelliSense:
+
+- `.vscode/c_cpp_properties.json` — VS Code C++ IntelliSense
+- `{AddonName}.vcxproj` — Visual Studio project file
+- `CMakeLists.txt` — CMake configuration
+
+These files include the correct engine include paths. If the engine is moved, run **Tools → Addons → Regenerate Native Addon Dependencies** to update them.

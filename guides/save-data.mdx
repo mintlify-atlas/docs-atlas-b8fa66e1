@@ -1,0 +1,267 @@
+---
+title: "Save Data: Persisting Game State Across Sessions"
+sidebarTitle: "Save Data"
+description: "Read and write typed key-value save data from Lua scripts, manage multiple save slots, and handle platform-specific storage on consoles, PC, and mobile."
+---
+
+Polyphase's save data system is a typed key-value store modelled after Unity's `PlayerPrefs`. Set values by string key, then write the in-memory data to a named save slot; load a slot to restore that data on the next session. The system works on every supported platform, routing writes to the correct storage API automatically — the filesystem on PC and mobile, the Memory Card on GameCube, and the SD card on Wii.
+
+## Platform Storage Locations
+
+| Platform | Storage Location | Notes |
+|---|---|---|
+| Windows | `ProjectDir/Saves/` | Standard filesystem |
+| Linux | `ProjectDir/Saves/` | Standard filesystem |
+| Android | `ProjectDir/Saves/` | Internal storage |
+| Wii | SD Card `ProjectDir/Saves/` | Filesystem via libogc |
+| 3DS | `ProjectDir/Saves/` | Internal storage |
+| GameCube | Memory Card Slot A | Uses the CARD API |
+
+<Note>
+On GameCube, saves go to Memory Card Slot A via the CARD API. Call `System.UnmountMemoryCard()` when you are done with saves if you need to release the card for other uses.
+</Note>
+
+## How It Works
+
+There is one shared in-memory key-value map. The workflow is always:
+
+1. **Set values** into the in-memory map with `SaveData.Set*()` calls.
+2. **Write to disk** with `SaveData.Save(slotName)` — this persists the data.
+3. **Load from disk** with `SaveData.Load(slotName)` — this replaces all in-memory data with the contents of the slot.
+4. **Read values** with `SaveData.Get*()` calls after loading.
+
+<Warning>
+`SaveData.Save()` and `SaveData.Load()` are separate operations. Setting a value only changes the in-memory data. If you set values and then the game exits without calling `Save()`, those changes are lost.
+</Warning>
+
+## Lua API Reference
+
+### Checking for Saves
+
+```lua
+-- Check whether a save file exists before loading
+if SaveData.DoesSaveExist("slot1") then
+    SaveData.Load("slot1")
+end
+
+-- Check whether a specific key exists in the current in-memory data
+if SaveData.HasKey("playerName") then
+    local name = SaveData.GetString("playerName", "Unknown")
+end
+```
+
+### Reading and Writing Values
+
+All getters accept an optional default value returned when the key is missing or holds a different type. The in-memory data is type-safe: `GetInt` only returns a stored value if that key was written with `SetInt`.
+
+| Type | Setter | Getter |
+|---|---|---|
+| Integer | `SaveData.SetInt(key, value)` | `SaveData.GetInt(key, default=0)` |
+| Float | `SaveData.SetFloat(key, value)` | `SaveData.GetFloat(key, default=0.0)` |
+| Boolean | `SaveData.SetBool(key, value)` | `SaveData.GetBool(key, default=false)` |
+| String | `SaveData.SetString(key, value)` | `SaveData.GetString(key, default="")` |
+| Vector (3D) | `SaveData.SetVector(key, value)` | `SaveData.GetVector(key, default=Vec(0,0,0))` |
+| Vector (2D) | `SaveData.SetVector2D(key, value)` | `SaveData.GetVector2D(key, default=Vec(0,0))` |
+| Color (RGBA) | `SaveData.SetColor(key, value)` | `SaveData.GetColor(key, default=Vec(0,0,0,0))` |
+
+```lua
+-- Writing
+SaveData.SetString("playerName", "Hero")
+SaveData.SetInt("health", 100)
+SaveData.SetFloat("playtime", 3.5)
+SaveData.SetBool("tutorialDone", false)
+SaveData.SetVector("spawnPoint", Vec3.New(0, 1, 0))
+SaveData.SetColor("hudColor", Vec3.New(1, 1, 1, 1))
+
+-- Reading with defaults
+local name     = SaveData.GetString("playerName", "Unknown")
+local health   = SaveData.GetInt("health", 100)
+local playtime = SaveData.GetFloat("playtime", 0.0)
+local done     = SaveData.GetBool("tutorialDone", false)
+local spawn    = SaveData.GetVector("spawnPoint", Vec3.New(0, 0, 0))
+```
+
+### Saving and Loading
+
+```lua
+-- Save the current in-memory data to a named slot
+SaveData.Save("slot1")
+
+-- Load a slot (replaces all in-memory data)
+SaveData.Load("slot1")
+
+-- Delete a save slot file from disk
+SaveData.DeleteSave("slot1")
+```
+
+### Clearing In-Memory Data
+
+```lua
+-- Remove a single key from in-memory data (does not touch the save file)
+SaveData.DeleteKey("temporaryFlag")
+
+-- Clear all in-memory data (does not touch any save files on disk)
+SaveData.DeleteAll()
+```
+
+---
+
+## A Complete Save Manager
+
+This script demonstrates a full save/load flow with multiple slots:
+
+```lua
+SaveGameManager = {}
+
+function SaveGameManager:Create()
+    self.currentSlot = "slot1"
+end
+
+function SaveGameManager:Start()
+    if SaveData.DoesSaveExist(self.currentSlot) then
+        SaveData.Load(self.currentSlot)
+        Log.Debug("Loaded save: " .. self.currentSlot)
+        Log.Debug("  Player: " .. SaveData.GetString("playerName", "Unknown"))
+        Log.Debug("  Health: " .. SaveData.GetInt("health", 100))
+    else
+        -- Initialize defaults for a new game
+        SaveData.SetString("playerName", "Hero")
+        SaveData.SetInt("health", 100)
+        SaveData.SetFloat("playtime", 0.0)
+        SaveData.SetVector("spawnPoint", Vec3.New(0, 1, 0))
+        SaveData.SetBool("tutorialDone", false)
+        SaveData.Save(self.currentSlot)
+        Log.Debug("Created new save: " .. self.currentSlot)
+    end
+end
+
+function SaveGameManager:SaveGame()
+    -- Accumulate playtime before saving
+    local playtime = SaveData.GetFloat("playtime", 0.0)
+    SaveData.SetFloat("playtime", playtime + Engine.GetElapsedTime())
+
+    -- Save the player's current position
+    local player = self:GetParent()
+    if player then
+        SaveData.SetVector("position", player:GetWorldPosition())
+    end
+
+    SaveData.Save(self.currentSlot)
+    Log.Debug("Game saved to " .. self.currentSlot)
+end
+
+function SaveGameManager:Tick(deltaTime)
+    if Input.IsKeyJustDown(Key.F5) then
+        self:SaveGame()
+    end
+    if Input.IsKeyJustDown(Key.F9) then
+        if SaveData.DoesSaveExist(self.currentSlot) then
+            SaveData.Load(self.currentSlot)
+            Log.Debug("Game loaded from " .. self.currentSlot)
+        end
+    end
+end
+```
+
+---
+
+## Multiple Save Slots
+
+Save slot names become filenames on filesystem platforms. Use a consistent naming convention and avoid special characters.
+
+```lua
+function SlotManager:SaveToSlot(slotNumber)
+    SaveData.SetInt("health",         self.health)
+    SaveData.SetString("playerName",  self.playerName)
+    SaveData.SetVector("position",    self:GetWorldPosition())
+    SaveData.SetFloat("playtime",     self.playtime)
+
+    local slotName = "slot" .. tostring(slotNumber)
+    SaveData.Save(slotName)
+end
+
+function SlotManager:LoadFromSlot(slotNumber)
+    local slotName = "slot" .. tostring(slotNumber)
+    if not SaveData.DoesSaveExist(slotName) then
+        return false
+    end
+
+    SaveData.Load(slotName)
+    self.health     = SaveData.GetInt("health", 100)
+    self.playerName = SaveData.GetString("playerName", "Hero")
+    self.playtime   = SaveData.GetFloat("playtime", 0.0)
+
+    local pos = SaveData.GetVector("position", Vec3.New(0, 0, 0))
+    self:SetWorldPosition(pos)
+    return true
+end
+
+-- Find which slots have save files
+function SlotManager:GetAvailableSlots()
+    local slots = {}
+    for i = 1, 10 do
+        local slotName = "slot" .. tostring(i)
+        if SaveData.DoesSaveExist(slotName) then
+            table.insert(slots, i)
+        end
+    end
+    return slots
+end
+
+function SlotManager:DeleteSlot(slotNumber)
+    local slotName = "slot" .. tostring(slotNumber)
+    if SaveData.DoesSaveExist(slotName) then
+        SaveData.DeleteSave(slotName)
+        Log.Debug("Deleted save slot " .. tostring(slotNumber))
+    end
+end
+```
+
+---
+
+## Persisting Player Preferences
+
+`SaveData` is also the right place for settings that persist across play sessions. Use a dedicated slot name like `"settings"` so it doesn't conflict with game saves:
+
+```lua
+function SettingsManager:LoadSettings()
+    if SaveData.DoesSaveExist("settings") then
+        SaveData.Load("settings")
+    end
+
+    -- Read with sensible defaults
+    self.musicVolume = SaveData.GetFloat("musicVolume", 0.8)
+    self.sfxVolume   = SaveData.GetFloat("sfxVolume", 1.0)
+    self.difficulty  = SaveData.GetInt("difficulty", 1)
+    self.invertY     = SaveData.GetBool("invertY", false)
+    self.hudColor    = SaveData.GetColor("hudColor", Vec3.New(1, 1, 1, 1))
+end
+
+function SettingsManager:SaveSettings()
+    SaveData.SetFloat("musicVolume", self.musicVolume)
+    SaveData.SetFloat("sfxVolume",   self.sfxVolume)
+    SaveData.SetInt("difficulty",    self.difficulty)
+    SaveData.SetBool("invertY",      self.invertY)
+    SaveData.SetColor("hudColor",    self.hudColor)
+    SaveData.Save("settings")
+end
+```
+
+---
+
+## Key Behaviours to Know
+
+<CardGroup cols={2}>
+  <Card title="In-memory store is global" icon="database">
+    There is one shared key-value map across all scripts. Calling `SaveData.Load()` replaces **all** current in-memory data with the contents of the loaded slot.
+  </Card>
+  <Card title="Save and Load are explicit" icon="floppy-disk">
+    Setting values only changes in-memory data. You must call `SaveData.Save(name)` to write to disk. The data is not auto-saved on exit.
+  </Card>
+  <Card title="Type-safe getters" icon="shield-check">
+    `GetInt` only returns a stored value if that key was written with `SetInt`. A key that exists but holds a different type returns the default value instead.
+  </Card>
+  <Card title="Slot names are filenames" icon="file">
+    On filesystem platforms (PC, Wii, 3DS, Android), the slot name becomes the filename in the `Saves/` directory. Avoid special characters, spaces, and very long names.
+  </Card>
+</CardGroup>

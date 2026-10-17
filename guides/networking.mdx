@@ -1,0 +1,522 @@
+---
+title: "Networking: HTTP, WebSockets, and Multiplayer"
+sidebarTitle: "Networking"
+description: "Use Polyphase's HTTP client, WebSocket client, and authoritative multiplayer system across all supported platforms including consoles and mobile."
+---
+
+Polyphase ships a unified networking stack that works identically across Windows, Linux, macOS, GameCube, Wii, 3DS, and Android. It covers three distinct layers: an async HTTP/HTTPS client for REST APIs and asset downloads, a WebSocket client for real-time bidirectional messaging, and a UDP-based authoritative multiplayer system for session hosting, state replication, and remote procedure calls.
+
+## HTTP Client
+
+The HTTP client lives at `Engine/Source/Network/Http/HttpClient.h` and is available to C++ gameplay code and Lua scripts through the same API. All requests are asynchronous by default — they run on a single shared worker thread and deliver their callbacks on the main thread during `Http::Tick()`, meaning you can safely touch node properties, asset references, and UI widgets from inside any callback without locking.
+
+### Platform Support
+
+| Platform | Backend | TLS | Notes |
+|---|---|---|---|
+| Windows | WinHTTP | SChannel (system) | No external dependency |
+| Linux | libcurl via `dlopen` | System OpenSSL | `IsAvailable()` returns false if `libcurl.so.4` is missing |
+| 3DS | libctru `httpc` | Nintendo system stack | Linked via `-lctru` |
+| Wii / GameCube | libogc TCP + mbedTLS | Vendored mbedTLS | Requires `External/mbedtls/lib-{wii,gcn}/` and `External/CACerts/cacert.pem` |
+| Android | Stub | n/a | `IsAvailable()` returns false; calls fail cleanly |
+
+<Note>
+On Linux, install `libcurl4` if HTTP is unavailable: `sudo apt install libcurl4`. On Wii/GameCube, build mbedTLS once via `build_dolphin_docker.sh` and ensure the CA bundle is present.
+</Note>
+
+### Making Requests
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    #include "Network/Http/HttpClient.h"
+
+    // Simple GET
+    Http::Get("https://api.example.com/status", [](const HttpResponse& r) {
+        if (r.IsSuccess())
+            LogDebug("HTTP %d, %zu bytes", r.GetStatus(), r.GetBody().size());
+        else
+            LogWarning("Request failed: %s", r.GetErrorMessage().c_str());
+    });
+
+    // POST with JSON body and custom headers
+    HttpRequest req(HttpVerb::Post, "https://api.example.com/items");
+    req.Header("Content-Type", "application/json")
+       .Header("Authorization", "Bearer " + token)
+       .Body(R"({"name":"test"})")
+       .TimeoutMs(5000)
+       .MaxRedirects(3)
+       .VerifySsl(true);
+
+    Http::Send(std::move(req), [](const HttpResponse& r) {
+        LogDebug("Status: %d", r.GetStatus());
+    });
+    ```
+
+    The full verb set:
+
+    ```cpp
+    Http::Get(url, callback);
+    Http::Post(url, body, callback);
+    Http::Put(url, body, callback);
+    Http::Patch(url, body, callback);
+    Http::Delete(url, callback);
+    Http::PostString(url, bodyStr, callback);
+    Http::SendSync(req);    // Tools/tests only — never on the main thread
+    ```
+  </Tab>
+  <Tab title="Lua">
+    ```lua
+    -- Simple GET
+    Http.Get("https://api.example.com/status", function(r)
+        if r:IsSuccess() then
+            print("OK", r:GetStatus(), #r:GetBody(), "bytes")
+        else
+            print("Error", r:GetStatus(), r:GetError())
+        end
+    end)
+
+    -- POST with JSON body using the request builder
+    Http.Request("POST", "https://api.example.com/login")
+        :Header("Content-Type", "application/json")
+        :Header("Accept", "application/json")
+        :Body('{"user":"alice","password":"hunter2"}')
+        :Timeout(3000)
+        :Send(function(r)
+            if r:IsSuccess() then
+                local data = r:GetJson()
+                SaveToken(data.token)
+            else
+                print("Login failed:", r:GetStatus(), r:GetError())
+            end
+        end)
+    ```
+
+    Full verb shortcuts: `Http.Get`, `Http.Post`, `Http.Put`, `Http.Patch`, `Http.Delete`. The request builder returned by `Http.Request(verb, url)` supports `:Header(name, value)`, `:Body(string)`, `:Timeout(ms)`, `:VerifySsl(bool)`, and `:Send(callback)`.
+  </Tab>
+</Tabs>
+
+### Response Object
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    const HttpResponse& r = ...;
+
+    r.GetStatus();           // 200, 404, ...
+    r.IsSuccess();           // true for 2xx with no transport error
+    r.GetError();            // HttpError enum
+    r.GetErrorMessage();     // human-readable detail
+    r.GetHeader("Content-Type");
+    r.GetBody();             // const std::vector<uint8_t>&
+    r.GetBodyAsString();
+    r.GetStream();           // wraps body in a Stream (no copy)
+    r.GetFinalUrl();         // URL after any redirects
+
+    // Asset decoders — return nullptr on failure
+    Texture*   tex = r.GetTexture();    // PNG/JPG/TGA/BMP via stb_image
+    SoundWave* snd = r.GetSoundWave();  // WAV today; OGG planned
+    ```
+  </Tab>
+  <Tab title="Lua">
+    | Method | Returns |
+    |---|---|
+    | `:IsSuccess()` | `true` when status is `[200, 300)` and no transport error |
+    | `:GetStatus()` | HTTP status code as integer (`0` if never reached server) |
+    | `:GetError()` | Error string or `nil` when none |
+    | `:GetBody()` | Response body as a Lua string (raw bytes) |
+    | `:GetHeader(name)` | Header value or `nil` |
+    | `:GetHeaders()` | Table of all response headers |
+    | `:GetFinalUrl()` | URL after redirects |
+    | `:GetJson()` | Lua table parsed from JSON, or `nil, errMsg` on failure |
+    | `:GetTexture()` | New `Texture` asset decoded from a PNG/JPG body |
+    | `:GetSoundWave()` | New `SoundWave` asset decoded from a WAV body |
+  </Tab>
+</Tabs>
+
+### Cancellation
+
+Every send returns a handle. Call `Cancel()` at any time — from any thread. The backend aborts cleanly and the callback still fires with an error of `Cancelled`.
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    class MyNode : public Node3D {
+        HttpHandle mPendingRequest;
+    public:
+        void StartFetch() {
+            mPendingRequest = Http::Get(url, [this](const HttpResponse& r) {
+                if (r.GetError() == HttpError::Cancelled) return;
+                // use r ...
+            });
+        }
+        void Destroy() override {
+            mPendingRequest.Cancel();   // safe whether or not it's still running
+            Node3D::Destroy();
+        }
+    };
+    ```
+  </Tab>
+  <Tab title="Lua">
+    ```lua
+    function MyScript:Start()
+        self.handle = Http.Get(longPollUrl, function(r)
+            if r:IsSuccess() and r:GetError() ~= "Cancelled" then
+                self:OnDataReceived(r:GetJson())
+            end
+        end)
+    end
+
+    function MyScript:Destroy()
+        if self.handle then self.handle:Cancel() end
+    end
+    ```
+  </Tab>
+</Tabs>
+
+### Downloading Assets
+
+The response can be decoded directly into engine assets:
+
+<Tabs>
+  <Tab title="C++">
+    ```cpp
+    // Download an avatar texture
+    Http::Get(player.avatarUrl, [&](const HttpResponse& r) {
+        Texture* tex = r.GetTexture();
+        if (tex == nullptr) {
+            LogWarning("Avatar decode failed");
+            return;
+        }
+        avatarWidget->SetTexture(tex);
+    });
+    ```
+  </Tab>
+  <Tab title="Lua">
+    ```lua
+    Http.Get(player.avatarUrl, function(r)
+        local tex = r:GetTexture()
+        if tex == nil then
+            Log.Warning("Avatar decode failed for " .. player.name)
+            return
+        end
+        avatarWidget:SetTexture(tex)
+    end)
+
+    -- Download and play a sound effect
+    Http.Get("https://cdn.example.com/sfx/bell.wav", function(r)
+        local snd = r:GetSoundWave()
+        if snd then Audio.PlaySound2D(snd, 1.0, 1.0) end
+    end)
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+`GetTexture()` requires power-of-two image dimensions (64×64, 128×128, 256×256, etc.) for runtime safety on consoles. Non-PoT images return `nil`.
+</Warning>
+
+### Request Defaults
+
+| Field | Default | Override |
+|---|---|---|
+| Timeout | 10 000 ms | `req.TimeoutMs(ms)` / `:Timeout(ms)` |
+| Max redirects | 5 | `req.MaxRedirects(n)` |
+| Max body size | 64 MiB | `req.MaxBodyBytes(n)` |
+| SSL verify | on | `req.VerifySsl(false)` / `:VerifySsl(false)` |
+| User-Agent | `Polyphase/1.0` | `req.Header("User-Agent", "...")` |
+
+---
+
+## WebSocket Client
+
+The WebSocket client provides real-time bidirectional messaging. It is available globally as `WebSocket` in Lua and through the `WebSocket::` namespace in C++. Like HTTP, all callbacks fire on the main thread from the engine's per-frame pump — you can touch any engine state from inside them without locking.
+
+<Note>
+The WebSocket client is **not** a replacement for the engine's UDP multiplayer (`Network.*`). Use it for dedicated game servers that speak WebSocket, external services, or tooling — not for peer-to-peer or LAN sessions.
+</Note>
+
+### Platform Support
+
+| Platform | `ws://` | `wss://` |
+|---|---|---|
+| Windows | ✅ | ✅ via WinHTTP |
+| Linux | ✅ | ✅ with libcurl ≥ 7.86 |
+| Web (WebGL2 / WebGPU) | ✅ | ✅ via Browser WebSocket |
+| Android | ✅ | ❌ |
+| 3DS | ✅ | ❌ |
+| GameCube / Wii | ✅ | ❌ |
+| Variant-2 addon targets | ❌ | ❌ (`IsAvailable()` returns false) |
+
+Platforms without TLS can opt into a `wss://` → `ws://` downgrade by defining `POLYPHASE_WS_DOWNGRADE_WSS=1` in their Makefile. This is **off by default everywhere** — without it an un-supported `wss://` URL fails loudly.
+
+### Connecting
+
+<Tabs>
+  <Tab title="Lua">
+    ```lua
+    -- Check availability first on uncertain platforms
+    if not WebSocket.IsAvailable() then
+        Log.Error("WebSocket unavailable: " .. WebSocket.GetMissingDependencyMessage())
+        return
+    end
+
+    local ws, err = WebSocket.Connect("ws://127.0.0.1:9002/", {
+        protocols = { "mygame.v1" },   -- Sec-WebSocket-Protocol offers
+        -- headers = { ["X-Auth"] = token },  -- native only
+    })
+    if ws == nil then
+        Log.Error("Connect failed: " .. err)
+        return
+    end
+
+    -- Store the connection — dropping the reference closes it
+    self.ws = ws
+    ```
+  </Tab>
+</Tabs>
+
+### Events and Sending
+
+<Tabs>
+  <Tab title="Lua (callbacks)">
+    ```lua
+    self.ws:SetOpenCallback(function()
+        Log.Debug("Connected, protocol: " .. self.ws:GetSelectedProtocol())
+        self.ws:SendText('{"type":"hello"}')
+    end)
+
+    self.ws:SetMessageCallback(function(data, isBinary)
+        if isBinary then
+            Log.Debug("Binary frame: " .. #data .. " bytes")
+        else
+            Log.Debug("Text frame: " .. data)
+        end
+    end)
+
+    self.ws:SetErrorCallback(function(message)
+        Log.Warning("WS error: " .. message)
+    end)
+
+    self.ws:SetClosedCallback(function(code, reason, wasClean)
+        Log.Debug("Closed " .. code .. " '" .. reason .. "' clean=" .. tostring(wasClean))
+        self.ws = nil
+    end)
+    ```
+  </Tab>
+  <Tab title="Lua (polling)">
+    ```lua
+    -- Alternative to callbacks — only works when no message callback is set
+    function MyScript:Tick(dt)
+        if self.ws == nil then return end
+        while self.ws:GetAvailablePacketCount() > 0 do
+            local data, isBinary = self.ws:GetPacket()
+            -- handle data ...
+        end
+    end
+    ```
+  </Tab>
+</Tabs>
+
+```lua
+-- Sending
+self.ws:SendText('{"type":"move","x":10}')    -- returns false if not Open or queue full
+self.ws:SendBinary(binaryString)
+
+-- Closing
+self.ws:Close(1000, "goodbye")                -- defaults: code 1000, reason ""
+```
+
+### Connection States
+
+```lua
+WebSocketState = { Connecting = 0, Open = 1, Closing = 2, Closed = 3 }
+
+-- Query state at any time
+local state = self.ws:GetState()
+local wasDowngraded = self.ws:WasDowngraded()   -- true if wss:// was rewritten to ws://
+```
+
+**Event ordering is always:** `Open → Message* → Closed`. A transport failure before `Open` produces `Error → Closed(1006, "", false)`.
+
+### Limits
+
+| | |
+|---|---|
+| Outgoing queue | 1 MiB (override with `options.maxQueuedBytes`) |
+| Incoming queue | 1 MiB (only used when no message callback is set) |
+| Max single message | 16 MiB |
+| DNS lookup | Synchronous on all platforms — connect at menu/load time or pass a numeric IP |
+
+### Testing Locally
+
+The engine ships a dependency-free Node.js echo server:
+
+```bash
+node Tools/ws-echo/echo.js
+```
+
+Then run `WsEchoTest.lua` from the WebSocket test project. It logs `WS-TEST PASS` or `WS-TEST FAIL <step>` and covers availability, subprotocol negotiation, text/binary echo, multi-tick reads, server-initiated close, and refused connections.
+
+---
+
+## Multiplayer Networking
+
+Polyphase uses an **authoritative-server** model. One host is the server (the only host that spawns replicated nodes and runs canonical game logic); every other host is a client. A game with no active session is **local**, which is treated identically to a server — so single-player and host code share the same paths and `Network.IsAuthority()` is your primary guard.
+
+### Roles and Host IDs
+
+```lua
+Network.IsServer()      -- this host is the dedicated/listen server
+Network.IsClient()      -- this host is a connected client
+Network.IsLocal()       -- no session active (single machine)
+Network.IsAuthority()   -- IsServer() or IsLocal()
+Network.GetHostId()     -- this host's NetHostId
+Network.GetNetStatus()  -- "Server" | "Client" | "Connecting" | "Local"
+```
+
+### Hosting and Joining
+
+```lua
+-- Host a LAN session
+Network.OpenSession({
+    name       = "My Game",
+    lan        = true,
+    port       = 7777,
+    maxPlayers = 4,
+})
+
+-- Browse and join
+Network.BeginSessionSearch()
+self.timer = TimerManager.SetTimer(function()
+    if Network.GetNumSessions() > 0 then
+        Network.JoinSession(Network.GetSession(1))
+        Network.EndSessionSearch()
+        TimerManager.ClearTimer(self.timer)
+    end
+end, 1.0, true)
+
+-- Or connect directly
+Network.JoinSession({ ipAddress = "192.168.1.42", port = 7777 })
+```
+
+### Connection Lifecycle
+
+```lua
+function GameState:Init()
+    Network.SetConnectCallback(GameState.OnConnect)       -- server: client joined
+    Network.SetAcceptCallback(GameState.OnAccept)         -- client: accepted by server
+    Network.SetRejectCallback(GameState.OnReject)         -- client: rejected (0=bad code, 1=version, 2=full)
+    Network.SetDisconnectCallback(GameState.OnDisconnect) -- server: client left
+    Network.SetKickCallback(GameState.OnKick)             -- client: we were kicked
+end
+
+-- Server callback — client is { ipAddress, port, hostId, onlineId, ping, ready }
+GameState.OnConnect = function(client)
+    Log.Debug("Client connected: hostId " .. client.hostId)
+end
+
+-- Client callback — no arguments
+GameState.OnAccept = function()
+    Log.Debug("Server accepted our connection")
+end
+```
+
+### Replicating State
+
+Declare which script variables sync from server → clients with `GatherReplicatedData()`. An `onRep` handler (named by string) runs on the client whenever that variable arrives.
+
+```lua
+function Bomber:GatherReplicatedData()
+    return {
+        { name = 'netYaw',      type = DatumType.Float },
+        { name = 'netPosition', type = DatumType.Vector, onRep = 'OnRep_netPosition' },
+        { name = 'bombCount',   type = DatumType.Byte },
+        { name = 'bombRange',   type = DatumType.Byte },
+        { name = 'moveSpeed',   type = DatumType.Float },
+    }
+end
+
+function Bomber:OnRep_netPosition()
+    if self:IsOwned() then
+        self:SetWorldPosition(self.netPosition)
+    end
+end
+```
+
+### Remote Procedure Calls (NetFuncs)
+
+Declare RPCs with `GatherNetFuncs()` and invoke them with `node:InvokeNetFunc(name, ...)` (up to 8 arguments).
+
+```lua
+function Bomber:GatherNetFuncs()
+    return {
+        { name = 'S_PlantBomb',          type = NetFuncType.Server,    reliable = true  },
+        { name = 'S_SyncTransform',      type = NetFuncType.Server,    reliable = false },
+        { name = 'C_ForceWorldPosition', type = NetFuncType.Client,    reliable = true  },
+        { name = 'M_SwingCane',          type = NetFuncType.Multicast, reliable = false },
+    }
+end
+```
+
+| Type | Runs On | Called From | Typical Use |
+|---|---|---|---|
+| `NetFuncType.Server` | The server | Owning client | Client asks server to do something |
+| `NetFuncType.Client` | Owning client | The server | Server corrects or notifies one client |
+| `NetFuncType.Multicast` | All hosts | The server | Broadcast a cosmetic event to everyone |
+
+`reliable = true` guarantees delivery and ordering. `reliable = false` is best-effort and cheaper — use it for high-frequency updates like transform sync.
+
+```lua
+-- Client asks the server to plant a bomb
+function Bomber:TryPlantBomb()
+    if self:IsLocallyControlled() then
+        self:InvokeNetFunc('S_PlantBomb')
+    end
+end
+
+-- Server body — only the server spawns the replicated bomb node
+function Bomber:S_PlantBomb()
+    local bomb = self.bombScene:Instantiate()
+    -- position it, add to the field ...
+end
+
+-- Server tells all clients to play the swing animation
+function Bomber:S_SwingCane()
+    self:InvokeNetFunc('M_SwingCane')
+end
+
+function Bomber:M_SwingCane()
+    self.mesh:PlayAnimation('Swing')
+end
+```
+
+### Ownership
+
+```lua
+node:GetOwningHost()             -- NetHostId that owns this node
+node:SetOwningHost(hostId)       -- server only: assign ownership
+node:IsOwned()                   -- true if THIS host owns the node
+node:IsLocallyControlled()       -- alias for IsOwned()
+node:HasAuthority()              -- node-scoped Network.IsAuthority()
+
+node:SetReplicate(true)          -- include this node in replication
+node:SetReplicateTransform(true) -- also auto-replicate transform
+node:ForceReplication()          -- push an immediate replication update
+
+-- Register a host's pawn for relevancy checks
+Network.SetPawn(hostId, node)
+```
+
+### Diagnostics
+
+```lua
+Network.EnableNetRelevancy(true)     -- stop replicating nodes far from a client's pawn
+Network.SetRelevancyDistance(50.0)
+node:SetAlwaysRelevant(true)         -- exempt a node from relevancy culling
+
+Network.GetBytesSent()
+Network.GetBytesReceived()
+Network.GetUploadRate()
+Network.GetDownloadRate()
+```

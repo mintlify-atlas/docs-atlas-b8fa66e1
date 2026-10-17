@@ -1,0 +1,204 @@
+---
+title: "macOS Developer Environment Setup for Polyphase"
+sidebarTitle: "macOS"
+description: "Install Xcode Command Line Tools, Vulkan SDK with MoltenVK, Homebrew tools, and devkitPro to build Polyphase on Apple Silicon and Intel Macs."
+---
+
+Polyphase builds and runs natively on Apple Silicon (arm64) and Intel (x86_64) Macs. Rendering goes through Vulkan on top of MoltenVK, the window and input layer is native Cocoa, and audio uses CoreAudio. The shipped editor is a universal binary. A source build targets the Mac it runs on unless you set `MAC_ARCH` (see the [Architectures](#architectures-apple-silicon-intel-universal) section below).
+
+## Required Tools
+
+| Install | Needed for | Verify with |
+|---------|-----------|-------------|
+| **Xcode Command Line Tools** (`clang`, `make`, `lipo`, `codesign`) | Everything | `xcode-select -p` prints a path |
+| **Homebrew** with `cmake` and `python3` | libgit2 prebuild, asset-stub generator, native addons with CMake | `cmake --version`, `python3 --version` |
+| **Vulkan SDK 1.4.357.1** (LunarG, macOS) | Editor and every game build: MoltenVK, loader, `glslc`, shaderc, SPIRV-Cross | `vulkaninfo --summary` lists `driverName = MoltenVK` |
+| **devkitPro pacman** with `wii-dev` and `3ds-dev` | Packaging for Wii, GameCube, and 3DS | `powerpc-eabi-g++ --version`, `arm-none-eabi-g++ --version` |
+| **`libogc2`**, `libogc2-libdvm`, `gamecube-tools-git` | Packaging for **GameCube** (libogc2, not the stock libogc) | `ls /opt/devkitpro/libogc2/gamecube/lib` |
+| Rosetta 2 *(Apple Silicon only, optional)* | Running Intel slice of a universal build; `cwavtool` for 3DS banners | `arch -x86_64 /usr/bin/true` |
+| Homebrew `curl` *(optional)* | `wss://` connections from the editor | `ls /opt/homebrew/opt/curl/lib` |
+
+<Note>
+  Not needed on macOS: Docker (macOS targets cannot be built in a container and the console toolchains run natively), Visual Studio, and MSYS2.
+</Note>
+
+<Steps>
+
+### Pull Submodules
+
+```bash
+git submodule update --init --recursive
+```
+
+### Install Xcode Command Line Tools
+
+```bash
+xcode-select --install
+```
+
+A full Xcode installation also works. Nothing in the Polyphase build system uses Xcode projects.
+
+### Install Homebrew Build Helpers
+
+```bash
+brew install cmake python3
+```
+
+Homebrew lives in `/opt/homebrew` on Apple Silicon and `/usr/local` on Intel Macs. The editor looks in both locations when spawning build tools.
+
+<Note>
+  `cmake` is only used to build the bundled `libgit2` once (`Tools/prebuild_mac.sh`) and by native addons that ship a CMake project. The engine itself builds with `make`. The system `curl` on macOS has no WebSocket support; for `wss://` connections run `brew install curl` and export `POLYPHASE_LIBCURL=/opt/homebrew/opt/curl/lib/libcurl.4.dylib` (`/usr/local/opt/curl/lib/libcurl.4.dylib` on Intel).
+</Note>
+
+### Install the Vulkan SDK
+
+One installer covers both architectures. The SDK's dylibs and static libraries are universal, so the same install serves native, Intel, and universal builds.
+
+Download the macOS SDK version **1.4.357.1** from [https://vulkan.lunarg.com/sdk/home#mac](https://vulkan.lunarg.com/sdk/home#mac) and install it to `~/VulkanSDK/1.4.357.1`.
+
+Add the following to your `~/.zshrc` (replace `1.4.357.1` with the version you installed). `VULKAN_SDK` must point at the `macOS` subdirectory, which holds `include/`, `lib/`, and `bin/`:
+
+```bash
+export VULKAN_SDK=$HOME/VulkanSDK/1.4.357.1/macOS
+export PATH=$VULKAN_SDK/bin:$PATH
+export VK_ICD_FILENAMES=$VULKAN_SDK/share/vulkan/icd.d/MoltenVK_icd.json
+export VK_DRIVER_FILES=$VULKAN_SDK/share/vulkan/icd.d/MoltenVK_icd.json
+export VK_ADD_LAYER_PATH=$VULKAN_SDK/share/vulkan/explicit_layer.d
+```
+
+Reload your shell and verify:
+
+```bash
+source ~/.zshrc
+vulkaninfo --summary | grep -E "deviceName|driverName"
+```
+
+Expected output includes `driverName = MoltenVK` and your GPU name. `which glslc` should print a path inside the SDK.
+
+### Install devkitPro Toolchains
+
+**Step 1 — Install devkitPro Pacman:**
+
+Download the `.pkg` from the [devkitPro pacman releases](https://github.com/devkitPro/pacman/releases) and install it. It supports Intel and Apple Silicon Macs, creates `/opt/devkitpro`, and sets `DEVKITPRO`, `DEVKITPPC`, `DEVKITARM` in `/etc/profile.d/devkit-env.sh`.
+
+**Step 2 — Install Wii and 3DS toolchains:**
+
+`wii-dev` is required for GameCube too — it provides devkitPPC (`powerpc-eabi-g++`), which the GameCube build uses even though GameCube libraries come from `libogc2`.
+
+```bash
+sudo dkp-pacman -S wii-dev 3ds-dev
+```
+
+Restart the terminal, then verify:
+
+```bash
+powerpc-eabi-g++ --version
+arm-none-eabi-g++ --version
+```
+
+**Step 3 — Install libogc2 for GameCube builds:**
+
+Trust the libogc2 signing key:
+
+```bash
+sudo dkp-pacman-key --recv-keys C8A2759C315CFBC3429CC2E422B803BA8AA3D7CE --keyserver keyserver.ubuntu.com
+sudo dkp-pacman-key --lsign-key C8A2759C315CFBC3429CC2E422B803BA8AA3D7CE
+```
+
+<Note>
+  If `--recv-keys` fails with *"No route to host"* (HKP port 11371 is often blocked), fetch the key over HTTPS instead:
+
+  ```bash
+  curl -o ~/Downloads/libogc2-key.asc "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xC8A2759C315CFBC3429CC2E422B803BA8AA3D7CE"
+  sudo dkp-pacman-key --add ~/Downloads/libogc2-key.asc
+  sudo dkp-pacman-key --lsign-key C8A2759C315CFBC3429CC2E422B803BA8AA3D7CE
+  ```
+</Note>
+
+Add the libogc2 repository to `/opt/devkitpro/pacman/etc/pacman.conf` **above** the existing `[dkp-libs]` entry. This is file content, not commands — both `Server` lines are mirrors and both belong in the file:
+
+```ini
+[libogc2-devkitpro]
+Server = https://packages.libogc2.org/devkitpro/macos/$arch
+Server = https://packages.extremscorner.org/devkitpro/macos/$arch
+```
+
+Sync and install:
+
+```bash
+sudo dkp-pacman -Syuu
+sudo dkp-pacman -S gamecube-tools-git libogc2 libogc2-libdvm
+```
+
+Verify:
+
+```bash
+ls /opt/devkitpro/libogc2/gamecube/lib
+```
+
+### Run the Prebuild Script
+
+```bash
+bash Tools/prebuild_mac.sh
+```
+
+This checks that `VULKAN_SDK`, `cmake`, and the Command Line Tools are present, then builds `libgit2`, compiles shaders, and writes the embedded-asset stubs for `Standalone/Generated/`.
+
+### Build and Run the Editor
+
+**Terminal:**
+
+```bash
+cd Standalone
+make -f Makefile_Mac_Editor -j$(sysctl -n hw.ncpu)
+cd ..
+Standalone/Build/Mac/PolyphaseEditor
+```
+
+**VS Code:**
+
+Open the repo root, install the **C/C++ Extension Pack**, and pick **Polyphase Editor - Mac** in Run and Debug. It runs the **Make Standalone Editor - Mac** task, then launches under `lldb` with the repo root as the working directory.
+
+<Warning>
+  Always run the editor binary from the **repository root directory** so that `Engine/Assets` and `Engine/Shaders` resolve correctly. The editor's Ctrl-based hotkeys also accept the Command key (⌘S saves, ⌘Z undoes). F-keys require **Use F1, F2, etc. keys as standard function keys** in System Settings → Keyboard, or the Fn key.
+</Warning>
+
+</Steps>
+
+## Architectures: Apple Silicon, Intel, Universal
+
+The Makefiles take a `MAC_ARCH` variable on the command line or in the environment:
+
+| `MAC_ARCH` | Builds | When to use |
+|------------|--------|-------------|
+| `native` (default) | This Mac's arch (`arm64` on Apple Silicon, `x86_64` on Intel) | Day-to-day development |
+| `universal` | arm64 + x86_64 in one binary | What the release `.dmg` ships — about twice the compile time |
+| `arm64` / `x86_64` | A single slice, cross-compiled if not the host's arch | Testing the other architecture |
+
+```bash
+# Universal binary build
+MAC_ARCH=universal bash Tools/prebuild_mac.sh
+make -C Standalone -f Makefile_Mac_Editor -j$(sysctl -n hw.ncpu) MAC_ARCH=universal
+```
+
+<Note>
+  On Apple Silicon, install Rosetta 2 once to run the Intel slice of a universal build:
+
+  ```bash
+  softwareupdate --install-rosetta --agree-to-license
+  arch -x86_64 Standalone/Build/Mac/PolyphaseEditor
+  ```
+
+  `lipo -archs <binary>` shows which slices a file contains.
+</Note>
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| `Failed to find platform surface extension` / `No physical device found` | Export `VK_DRIVER_FILES` (see above) or install the SDK under `~/VulkanSDK` so the editor can find it. `vulkaninfo --summary` must list MoltenVK. |
+| `ERROR: VULKAN_SDK is not set` from `prebuild_mac.sh` or `make` | The shell did not load `~/.zshrc` (SSH, CI, a script). Export `VULKAN_SDK=$HOME/VulkanSDK/<ver>/macOS` explicitly. |
+| `dyld: Library not loaded: @rpath/libvulkan.1.dylib` | The editor was linked against a `VULKAN_SDK` that has since moved. Rebuild with the current `VULKAN_SDK`, or set `DYLD_LIBRARY_PATH=$VULKAN_SDK/lib`. |
+| `powerpc-eabi-g++: command not found` when packaging | `wii-dev` is not installed, or the terminal was not restarted after installing devkitPro. Run `dkp-pacman -Q` to list what is installed. |
+| GameCube link errors about missing `libogc2` | Step 3 of the devkitPro section was skipped. The stock `libogc` from `wii-dev` is not enough for GameCube. |
+| Gatekeeper blocks a downloaded editor or game | Ad-hoc signed builds are not notarized. Right-click → Open once, or `xattr -dr com.apple.quarantine <app>`. |

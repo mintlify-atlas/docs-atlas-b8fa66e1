@@ -1,0 +1,251 @@
+---
+title: "Building for Desktop Platforms with Polyphase Engine"
+sidebarTitle: "Desktop"
+description: "Build Polyphase Engine games for Windows, Linux, and macOS using the Vulkan backend, GLSL→SPIR-V shaders, MoltenVK on macOS, and platform installers."
+---
+
+Polyphase Engine targets Windows, Linux, and macOS through a shared **Vulkan** graphics backend. All three platforms use the same GLSL shader sources compiled to SPIR-V with `glslc`, and the same Lua scripting layer. Each platform has its own packaging step — an installer on Windows, AppImage/RPM on Linux, and a signed `.app` bundle on macOS. `SYS_GetPlatformTier()` returns **2** (desktop tier) on all three.
+
+## Vulkan Backend
+
+The engine uses Vulkan for all rendering on desktop targets. Vulkan is accessed through the LunarG Vulkan SDK, which must be installed and pointed to by the `VULKAN_SDK` environment variable.
+
+**Graphics constants (Vulkan):**
+
+| Constant | Value |
+|----------|-------|
+| `MAX_FRAMES` | 2 |
+| `MAX_MESH_VERTEX_COUNT` | 4,294,967,295 |
+| `MAX_GPU_BONES` | 64 |
+| `SUPPORTS_SECOND_SCREEN` | 0 |
+
+### MoltenVK on macOS
+
+macOS does not support Vulkan natively. Polyphase uses **MoltenVK**, a Vulkan-to-Metal translation layer, via the `VK_EXT_metal_surface` surface extension. The `VK_KHR_portability_enumeration` instance flag and `VK_KHR_portability_subset` device extension are required on Apple hardware.
+
+<Note>
+  The compute path tracer (light baking) is Windows and Linux only — it is not available on macOS due to Metal portability limitations.
+</Note>
+
+### Shader Compilation (GLSL → SPIR-V)
+
+Desktop shaders are written in GLSL and compiled to SPIR-V binaries using `glslc` from the Vulkan SDK. The build system runs this automatically during packaging, but you can invoke it manually:
+
+```bash
+# Compile a vertex shader
+glslc -fshader-stage=vert shader.vert.glsl -o shader.vert.spv
+
+# Compile a fragment shader
+glslc -fshader-stage=frag shader.frag.glsl -o shader.frag.spv
+```
+
+Shader sources live in `Engine/Shaders/GLSL/` and compiled SPIR-V binaries are output to `Engine/Intermediate/<Platform>/Shaders/`.
+
+## Windows
+
+### Build Commands
+
+Windows builds use Visual Studio (MSVC). Open `Standalone/Standalone.sln` and build the `Standalone` project, or use the `devenv` command line:
+
+```bash
+# Build the editor (DebugEditor config)
+devenv Standalone/Standalone.sln /Build "DebugEditor|x64" /Project Standalone
+
+# Build the game runtime (Release config)
+devenv Standalone/Standalone.sln /Build "Release|x64" /Project Standalone
+```
+
+### Installer Creation
+
+The Windows installer is built with [Inno Setup](https://jrsoftware.org/isinfo.php). The installer script lives at `Installers/Windows/PolyphaseSetup.iss`.
+
+```bash
+# Stage distribution files, then build the installer
+Installers/build_installer_windows.bat
+```
+
+The resulting installer is placed at `dist/PolyphaseSetup-<version>.exe`.
+
+<Note>
+  The installed editor needs `Polyphase.lib` and `Lua.lib` alongside the executable for native addon compilation. If those files are missing from a custom build, native addon DLLs will fail to link with `LNK1181`. See the `[Files]` section of `PolyphaseSetup.iss` if building a custom installer.
+</Note>
+
+### Preferences and Saves
+
+| What | Path |
+|------|------|
+| Editor preferences / downloaded tools | `%APPDATA%\PolyphaseEditor\` |
+| Addon cache | `%APPDATA%\PolyphaseEditor\AddonCache\` |
+| 3DS CIA tools | `%APPDATA%\PolyphaseEditor\Tools\3DS\` |
+| Save files (read-only project) | `%APPDATA%\<Project>\Saves\` |
+
+## Linux
+
+### Build Commands
+
+Linux builds use the GCC toolchain via GNU Make. The Vulkan SDK `bin/` directory must be on `PATH` (for `glslc`).
+
+```bash
+# Build the editor
+cd Standalone && make -f Makefile_Linux_Editor -j$(nproc)
+
+# Build the game runtime
+cd Standalone && make -f Makefile_Linux_Game -j$(nproc)
+
+# Run the editor from the repo root (working directory matters)
+Standalone/Build/Linux/PolyphaseEditor.elf
+```
+
+### AppImage and RPM Packaging
+
+Linux packaging produces both an AppImage (portable, no install required) and an RPM package.
+
+```bash
+bash Installers/build_installer_linux.sh
+```
+
+The output lands in `dist/`:
+
+- `dist/PolyphaseEditor-<version>-linux-x86_64.AppImage`
+- `dist/PolyphaseEditor-<version>-linux-x86_64.rpm`
+
+### Preferences and Saves
+
+| What | Path |
+|------|------|
+| Editor preferences / downloaded tools | `~/.config/PolyphaseEditor/` |
+| Addon cache | `~/.config/PolyphaseEditor/AddonCache/` |
+| 3DS CIA tools | `~/.config/PolyphaseEditor/Tools/3DS/` |
+| Save files | `~/.config/<Project>/Saves/` or `$POLYPHASE_SAVE_DIR` |
+
+## macOS
+
+### Requirements
+
+macOS builds require:
+- **Xcode Command Line Tools** (`xcode-select --install`)
+- **LunarG Vulkan SDK for macOS** — `VULKAN_SDK` must point to `~/VulkanSDK/<ver>/macOS`
+- macOS 12.0 or newer
+
+### Build Commands
+
+macOS builds use Apple's `clang` from the Xcode Command Line Tools.
+
+```bash
+# Build the editor
+make -C Standalone -f Makefile_Mac_Editor -j$(sysctl -n hw.ncpu)
+
+# Build the game runtime
+make -C Standalone -f Makefile_Mac_Game -j$(sysctl -n hw.ncpu)
+```
+
+### Architectures
+
+The `MAC_ARCH` variable controls which Mach-O slices are compiled:
+
+| Value | Flags | Use Case |
+|-------|-------|---------|
+| `native` (default) | `-arch $(uname -m)` | Day-to-day builds |
+| `arm64` | `-arch arm64` | Apple Silicon only |
+| `x86_64` | `-arch x86_64` | Intel only |
+| `universal` | `-arch arm64 -arch x86_64` | Release distribution |
+
+```bash
+# Build a universal binary (Apple Silicon + Intel)
+make -C Standalone -f Makefile_Mac_Editor -j$(sysctl -n hw.ncpu) MAC_ARCH=universal
+```
+
+### App Bundle Packaging
+
+The **macOS (App Bundle)** target (`polyphase.mac`) compiles the game and wraps it into a signed `.app` bundle.
+
+```bash
+# Package from the editor headlessly
+Standalone/Build/Mac/PolyphaseEditor -headless \
+    -project /path/to/Game/Game.octp \
+    -build Mac embedded
+```
+
+**What a build produces:**
+
+```
+<Project>/Packaged/Mac/
+    <Project>.macho           loose Mach-O binary
+    <Project>.app/            the deliverable app bundle
+    <Project>.dmg             optional (when Create .dmg is enabled)
+```
+
+**App bundle internal layout:**
+
+```
+<Project>.app/Contents/
+    Info.plist, PkgInfo
+    MacOS/<Project>                     Mach-O executable
+    MacOS/Addons/*.dylib                native addon dylibs
+    Frameworks/libvulkan.1.dylib        Vulkan loader
+    Frameworks/libMoltenVK.dylib        MoltenVK
+    Resources/                          game payload
+    Resources/vulkan/icd.d/MoltenVK_icd.json
+    Resources/<Project>.icns
+```
+
+**Packaging target options:**
+
+| Option | Default | Notes |
+|--------|---------|-------|
+| Bundle Identifier | `com.polyphase.<ProjectName>` | `CFBundleIdentifier` |
+| Version | `1.0.0` | `CFBundleShortVersionString` |
+| Minimum macOS | `12.0` | `LSMinimumSystemVersion` |
+| Architecture | Native (this Mac) | `universal`, `arm64`, or `x86_64` |
+| Signing Identity | ad-hoc (`-`) | e.g. `Developer ID Application: Name (TEAMID)` |
+| Notarize | off | Requires identity + notary keychain profile |
+| Create .dmg | off | `hdiutil` image with Applications shortcut |
+
+### Signing and Gatekeeper
+
+Polyphase always signs the bundle — ad-hoc by default (`codesign --sign -`). Ad-hoc bundles run on the machine that built them. For public distribution, supply a Developer ID certificate, notarize with `xcrun notarytool`, and staple. The packager passes `--options runtime` with an entitlements file to allow native addon dylibs to load under the hardened runtime.
+
+```bash
+# Verify a signed bundle
+codesign --verify --deep --strict --verbose=2 /path/to/Game/Packaged/Mac/Game.app
+
+# Launch the packaged bundle
+open -n /path/to/Game/Packaged/Mac/Game.app
+```
+
+### Shipping the Editor
+
+```bash
+bash Installers/build_app_mac.sh     # stages ->  dist/Polyphase.app
+bash Installers/build_dmg_mac.sh     # builds ->  dist/PolyphaseEditor-<version>-macos-<arch>.dmg
+```
+
+Set `MAC_SIGN_IDENTITY` and `MAC_NOTARY_PROFILE` environment variables to switch from ad-hoc to Developer ID signing and notarization.
+
+### Preferences and Saves
+
+| What | Path |
+|------|------|
+| Editor preferences / downloaded tools | `~/Library/Application Support/PolyphaseEditor/` |
+| Save files (read-only bundle) | `~/Library/Application Support/<Project>/Saves/` |
+| Save directory override | `$POLYPHASE_SAVE_DIR` |
+
+<Accordion title="Known macOS Limitations">
+  - The compute path tracer (light baking) is Windows/Linux only.
+  - `wideLines` is unavailable on Metal; debug lines render at 1 px.
+  - Docker builds of macOS targets are not supported.
+  - The Lua debugger transport (LuaSocket) is Windows only.
+  - Double-clicking an `.octp` in Finder delivers the path as an Apple Event, not on the command line. Use File → Open, or `open -a Polyphase --args /path/to/Game.octp`.
+</Accordion>
+
+## Platform Comparison
+
+| Feature | Windows | Linux | macOS |
+|---------|---------|-------|-------|
+| Graphics API | Vulkan | Vulkan | Vulkan via MoltenVK |
+| Shader compiler | `glslc` | `glslc` | `glslc` |
+| Build system | MSVC / Visual Studio | GNU Make (GCC) | GNU Make (Clang) |
+| Universal binary | No | No | Yes (`MAC_ARCH=universal`) |
+| Path tracer (light baking) | ✓ | ✓ | ✗ |
+| Docker builds | ✓ | ✓ | ✗ |
+| Packaging output | `.exe` installer | AppImage + RPM | `.app` bundle + `.dmg` |

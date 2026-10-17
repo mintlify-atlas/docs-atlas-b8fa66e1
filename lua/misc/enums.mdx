@@ -1,0 +1,258 @@
+---
+title: "Enums — All Polyphase Lua Enumeration Tables"
+sidebarTitle: "Enums"
+description: "Complete reference for every enumeration table in Polyphase Lua: BlendMode, DatumType, AnchorMode, ButtonState, Key, Gamepad, Mouse, and more."
+---
+
+Polyphase exposes enumeration values as global Lua tables. Access a value with dot notation: `BlendMode.Opaque`, `AnchorMode.FullStretch`, `Key.Space`, etc.
+
+---
+
+## BlendMode
+
+Controls how a material's shaded fragments are composited with the scene.
+
+| Value | Description |
+|-------|-------------|
+| `Opaque` | No blending; writes to depth buffer. |
+| `Masked` | No blending; discards pixels below the `MaskCutoff` alpha threshold. |
+| `Translucent` | Mix fragment color with existing scene color. |
+| `Additive` | Add fragment color to existing scene color. |
+
+---
+
+## ShadingModel
+
+Controls the lighting calculation used by `MaterialLite`.
+
+| Value | Description |
+|-------|-------------|
+| `Unlit` | No lighting applied. |
+| `Lit` | Standard diffuse/specular lighting. |
+| `Toon` | Toon/cel shading (Vulkan and 3DS only). |
+
+---
+
+## TevMode
+
+TEV (Texture Environment) modes control how multiple texture slots are composited when using `MaterialLite`.
+
+| Value | Description |
+|-------|-------------|
+| `Replace` | Replace previous color with this sample. |
+| `Modulate` | Multiply this sample against previous color. |
+| `Decal` | Blend this sample with previous color using alpha. |
+| `Add` | Add this sample to previous color. |
+| `SignedAdd` | Add `(sample - 0.5)` to previous color. |
+| `Subtract` | Subtract previous color from this sample. |
+| `Interpolate` | Blend between this and previous (not yet implemented). |
+
+---
+
+## AnchorMode
+
+Controls how a `Widget` is positioned and sized relative to its parent.
+
+| Value | Description |
+|-------|-------------|
+| `TopLeft` | Anchored to the top-left corner. |
+| `TopMid` | Anchored to the top center. |
+| `TopRight` | Anchored to the top-right corner. |
+| `MidLeft` | Anchored to the middle-left. |
+| `Mid` | Anchored to the center. |
+| `MidRight` | Anchored to the middle-right. |
+| `BottomLeft` | Anchored to the bottom-left. |
+| `BottomMid` | Anchored to the bottom center. |
+| `BottomRight` | Anchored to the bottom-right. |
+| `TopStretch` | Stretch horizontally along the top. |
+| `MidHorizontalStretch` | Stretch horizontally at vertical center. |
+| `BottomStretch` | Stretch horizontally along the bottom. |
+| `LeftStretch` | Stretch vertically on the left. |
+| `MidVerticalStretch` | Stretch vertically at horizontal center. |
+| `RightStretch` | Stretch vertically on the right. |
+| `FullStretch` | Fill parent on both axes. |
+| `Fill` | Zero-config full fill; Offset and Size ignored. |
+| `FillHorizontal` | Full width; Y uses Offset.y and Size.y. |
+| `FillVertical` | Full height; X uses Offset.x and Size.x. |
+
+---
+
+## DatumType
+
+Property data types used with `Property.Create()` and `GatherProperties()`.
+
+| Value | Description |
+|-------|-------------|
+| `Integer` | 32-bit integer. |
+| `Float` | Floating-point number. |
+| `Bool` | Boolean. |
+| `String` | String. |
+| `Vector2D` | 2D vector. |
+| `Vector` | 3D/4D vector. |
+| `Color` | RGBA color vector. |
+| `Asset` | Any asset reference. |
+| `Byte` | 8-bit integer. |
+| `Table` | Lua table. |
+| `Node` | Any node reference. |
+| `Short` | 16-bit integer. |
+| `Function` | Editor-button property that calls a Lua function. |
+
+---
+
+## NetFuncType
+
+Determines on which host(s) a network function executes.
+
+| Value | Description |
+|-------|-------------|
+| `Server` | Executes only on the server. |
+| `Client` | Executes on the owning client. |
+| `Multicast` | Executes on all hosts (must be called from the server). |
+
+---
+
+## Justification
+
+Text alignment within a `Text` widget.
+
+| Value | Description |
+|-------|-------------|
+| `Left` | Align text to the left. |
+| `Right` | Align text to the right. |
+| `Center` | Center text horizontally. |
+| `Top` | Align text to the top. |
+| `Bottom` | Align text to the bottom. |
+
+---
+
+## ButtonState
+
+Current interaction state of a `Button` widget.
+
+| Value | Description |
+|-------|-------------|
+| `Normal` | Default idle state. |
+| `Hovered` | Mouse is over the button. |
+| `Pressed` | Button is being pressed. |
+| `Locked` | Button is locked and cannot be activated. |
+
+---
+
+## ScreenOrientation
+
+| Value | Description |
+|-------|-------------|
+| `Landscape` | Force landscape. |
+| `Portrait` | Force portrait. |
+| `Auto` | Follow device orientation. |
+
+---
+
+## ParticleOrientation
+
+Orientation mode for `Particle3D` sprites.
+
+| Value | Description |
+|-------|-------------|
+| `X` | Face positive X. |
+| `Y` | Face positive Y. |
+| `Z` | Face positive Z. |
+| `NX` | Face negative X. |
+| `NY` | Face negative Y. |
+| `NZ` | Face negative Z. |
+| `Billboard` | Always face the camera. |
+
+---
+
+## NetHost
+
+Special host ID constants used with networking APIs.
+
+| Value | Description |
+|-------|-------------|
+| `Invalid` | Invalid / unassigned host (0). |
+| `Server` | The server host (1). |
+
+---
+
+## AttenuationFunc
+
+Volume falloff curve for `Audio3D` nodes.
+
+| Value | Description |
+|-------|-------------|
+| `Constant` | No distance falloff — same volume everywhere in range. |
+| `Linear` | Linear falloff from inner radius to outer radius. |
+
+---
+
+## CullMode
+
+Triangle culling mode for materials.
+
+| Value | Description |
+|-------|-------------|
+| `None` | Draw both sides (no culling). |
+| `Back` | Cull back-facing triangles (default). |
+| `Front` | Cull front-facing triangles. |
+
+---
+
+## Mouse
+
+Mouse button identifiers.
+
+| Value | Description |
+|-------|-------------|
+| `Left` | Left mouse button. |
+| `Right` | Right mouse button. |
+| `Middle` | Middle mouse button (scroll wheel click). |
+| `X1` | Extra button 1. |
+| `X2` | Extra button 2. |
+| `1`–`5` | Numeric aliases for mouse buttons. |
+
+---
+
+## Gamepad
+
+Gamepad button and axis identifiers.
+
+| Buttons | Axes |
+|---------|------|
+| `A`, `B`, `C`, `X`, `Y`, `Z` | `AxisL`, `AxisR` |
+| `L1`, `R1`, `L2`, `R2` | `AxisLX`, `AxisLY` |
+| `L3`, `R3` | `AxisRX`, `AxisRY` |
+| `Start`, `Select`, `Home` | |
+| `Left`, `Right`, `Up`, `Down` (D-pad) | |
+| `LsLeft`, `LsRight`, `LsUp`, `LsDown` (left stick directions) | |
+| `RsLeft`, `RsRight`, `RsUp`, `RsDown` (right stick directions) | |
+
+---
+
+## Key
+
+Keyboard key identifiers (selected entries; all keys are available).
+
+| Category | Values |
+|----------|--------|
+| Alphabet | `A`–`Z` |
+| Digits (numrow) | `Zero`–`Nine`, `N0`–`N9` |
+| Numpad | `Numpad0`–`Numpad9` |
+| Function | `F1`–`F12` |
+| Navigation | `Up`, `Down`, `Left`, `Right`, `Home`, `End`, `PageUp`, `PageDown`, `Insert`, `Delete` |
+| Modifiers | `ShiftL`, `ShiftR`, `ControlL`, `ControlR`, `AltL`, `AltR` |
+| Whitespace/Edit | `Space`, `Enter`, `Backspace`, `Tab` |
+| Special | `Escape`, `Back` |
+| Punctuation | `Period`, `Comma`, `Plus`, `Minus`, `Colon`, `Question`, `Squiggle`, `LeftBracket`, `BackSlash`, `RightBracket`, `Quote`, `Decimal` |
+
+```lua
+-- Check for jump input
+if Input.IsKeyJustDown(Key.Space) then
+    self:Jump()
+end
+
+-- Gamepad
+if Input.IsButtonJustDown(Gamepad.A) then
+    self:Jump()
+end
+```

@@ -1,0 +1,195 @@
+---
+title: "Global Functions, Properties & Constants in Polyphase Lua"
+sidebarTitle: "Globals"
+description: "Polyphase global Lua functions: asset loading (LoadAsset, AsyncLoadAsset, GetAsset, UnloadAsset, RefSweep) and editor Property.Create for exposing script fields."
+---
+
+Polyphase exposes a set of global Lua functions and utilities that are available in every script without any `require` call. This page covers asset management globals and the `Property` system for exposing script fields to the editor.
+
+---
+
+## Asset Management Globals
+
+### `LoadAsset(name)`
+
+Load an asset by name and return it immediately. Blocks until the asset is fully loaded.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Asset name (e.g. `"Textures/T_Rock"`, `"Meshes/SM_Tree"`). |
+
+**Returns:** `Asset` — the loaded asset, or `nil` if not found.
+
+```lua
+local mesh = LoadAsset("Meshes/SM_Crate")
+self:SetStaticMesh(mesh)
+```
+
+---
+
+### `GetAsset(name)`
+
+Get an already-loaded asset by name. Does **not** load it — returns `nil` if the asset has not been loaded yet.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Asset name. |
+
+**Returns:** `Asset` — the asset if loaded, otherwise `nil`.
+
+```lua
+local cached = GetAsset("Textures/T_Explosion")
+if cached then
+    self.quad:SetTexture(cached)
+end
+```
+
+---
+
+### `AsyncLoadAsset(name)`
+
+Request an asset to be loaded asynchronously. Returns a reference immediately; call `asset:IsLoaded()` to check completion.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Asset name. |
+
+**Returns:** `Asset` — pending asset handle.
+
+<Note>There is currently no callback for when async loading finishes. Poll `asset:IsLoaded()` in your `Tick()` function until it returns `true`.</Note>
+
+```lua
+function Level:Start()
+    self.bigMesh = AsyncLoadAsset("Meshes/SK_BigBoss")
+end
+
+function Level:Tick(dt)
+    if self.bigMesh and self.bigMesh:IsLoaded() and not self.bossSpawned then
+        self.bossSpawned = true
+        local boss = self:CreateChild("SkeletalMesh3D")
+        boss:SetSkeletalMesh(self.bigMesh)
+    end
+end
+```
+
+---
+
+### `UnloadAsset(name)`
+
+Unload an asset that has no remaining references.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Asset name. |
+
+<Warning>Calling this on an asset that is still referenced will have no effect. Use `RefSweep()` to clean up all unreferenced assets at once.</Warning>
+
+---
+
+### `RefSweep()`
+
+Unload all assets that are no longer referenced by any C++ or Lua code. Call this after a level transition or when you know a batch of assets is no longer needed.
+
+```lua
+-- After unloading a level
+RefSweep()
+```
+
+---
+
+## Property System
+
+The `Property` module lets scripts expose typed fields to the editor's Properties Inspector. Properties must be created inside the script's `Create()` method and assigned to `self`.
+
+### `Property.Create(type, defaultValue, displayName)`
+
+Create a single editor-exposed property. Returns the default value, so assign it directly to `self`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `type` | `integer` | `DatumType` enum value. |
+| `defaultValue` | `any` | Default value for the property. |
+| `displayName` | `string` | *(optional)* Label shown in the editor. Defaults to the variable name. |
+
+**Returns:** `any` — the default value.
+
+```lua
+function MyScript:Create()
+    self.speed    = Property.Create(DatumType.Float,  200.0)
+    self.label    = Property.Create(DatumType.String, "Player", "Display Name")
+    self.myAsset  = Property.Create(DatumType.Asset,  nil,      "Sound Effect")
+end
+```
+
+---
+
+### `Property.CreateArray(type, arrayValues, displayName)`
+
+Create an array property shown in the editor with `+` / `−` buttons for adding and removing elements.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `type` | `integer` | `DatumType` enum value for each element. |
+| `arrayValues` | `table` | Initial array values. |
+| `displayName` | `string` | *(optional)* Label shown in the editor. |
+
+**Returns:** `table` — the initial values as a Lua array.
+
+```lua
+function EnemySpawner:Create()
+    self.spawnPoints = Property.CreateArray(DatumType.Node,  {}, "Spawn Points")
+    self.enemies     = Property.CreateArray(DatumType.Asset, {}, "Enemy Scenes")
+    self.weights     = Property.CreateArray(DatumType.Float, {1.0, 2.0, 1.0})
+end
+```
+
+---
+
+### Function Properties (editor buttons)
+
+Expose a Lua function as a clickable button in the Properties Inspector using `DatumType.Function` inside `GatherProperties()`. The `name` field must match a function defined on the script.
+
+```lua
+function MyScript:GatherProperties()
+    return {
+        { name = "speed",          type = DatumType.Float },
+        { name = "ResetPosition",  type = DatumType.Function },
+        { name = "PrintDebugInfo", type = DatumType.Function, display_name = "Print Debug" },
+    }
+end
+
+function MyScript:ResetPosition()
+    self:SetWorldPosition(Vec(0, 0, 0))
+end
+
+function MyScript:PrintDebugInfo()
+    Log.Debug("Speed: " .. tostring(self.speed))
+end
+```
+
+<Note>Function properties are editor-only. They store no data, are not serialized, and require the script to be active to work.</Note>
+
+---
+
+## GatherProperties (Table Syntax)
+
+The `GatherProperties()` callback is an alternative to `Property.Create()`. Return a table of property descriptor tables:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Lua variable name (also used as the default display name). |
+| `type` | Yes | `DatumType` enum value. |
+| `display_name` | No | Custom label for the editor. |
+| `array` | No | `true` to make the property an array. |
+
+```lua
+function PlayerController:GatherProperties()
+    return {
+        { name = "moveSpeed",  type = DatumType.Float  },
+        { name = "jumpHeight", type = DatumType.Float  },
+        { name = "isAI",       type = DatumType.Bool   },
+        { name = "waypoints",  type = DatumType.Node,  array = true },
+        { name = "sounds",     type = DatumType.Asset, array = true },
+    }
+end
+```

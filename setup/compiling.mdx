@@ -1,0 +1,213 @@
+---
+title: "Compiling Polyphase — Visual Studio, VS Code, and Terminal"
+sidebarTitle: "Compiling"
+description: "Build Polyphase Engine from source using Visual Studio 2022, VS Code with the C/C++ extension, or make in a terminal on Linux and macOS."
+---
+
+This guide covers compiling the Polyphase Engine editor from source. Before building, make sure you have completed the environment setup for your operating system ([Windows](/setup/windows), [Linux](/setup/linux), or [macOS](/setup/mac)) and have initialised all submodules.
+
+## Submodule Initialisation
+
+A fresh clone does not include the engine's submodules. Run this once from the repository root before any build attempt:
+
+```bash
+git submodule update --init --recursive
+```
+
+The prebuild scripts (`Tools/prebuild.bat` on Windows, `Tools/prebuild.sh` on Linux, `Tools/prebuild_mac.sh` on macOS) must also be run to compile shaders, build `libgit2`, and write the generated stubs in `Standalone/Generated/`. See your OS setup guide for details.
+
+---
+
+## Build Configurations
+
+| Configuration | Purpose |
+|---------------|---------|
+| `DebugEditor` | Debug build of the full visual editor — use this for day-to-day development |
+| `ReleaseEditor` | Optimised editor build — faster but harder to debug |
+| `Debug` | Debug build of the game runtime (no editor) |
+| `Release` | Optimised game runtime |
+| `ReleaseSteam` | Optimised game runtime with Steam support |
+
+---
+
+## Visual Studio (Windows)
+
+<Steps>
+
+### Open the Solution
+
+Open `Polyphase.sln` from the repository root in Visual Studio 2022.
+
+### Set the Build Configuration
+
+In the configuration dropdown at the top of the IDE, switch to **`DebugEditor`**.
+
+### Set the Startup Project
+
+In Solution Explorer, right-click the **`Standalone`** project and select **Set as Startup Project**. Its name will go bold.
+
+### Set the Working Directory
+
+In the debug settings for `Standalone`, change the **Working Directory** to `$(SolutionDir)`. This ensures the editor finds `Engine/Assets` and `Engine/Shaders` at launch.
+
+### Build and Run
+
+Press **F5** (or **Build → Start Debugging**) to build and launch the editor.
+
+<Warning>
+  If you see **"Root element is missing"** when opening the solution after a hard crash or power loss, restore from the backup the build system leaves behind:
+
+  ```bat
+  copy /Y Standalone\Standalone.vcxproj.orig Standalone\Standalone.vcxproj
+  ```
+</Warning>
+
+</Steps>
+
+---
+
+## VS Code (All Platforms)
+
+<Steps>
+
+### Open the Repository Root
+
+Open the root Polyphase folder (where the `README.md` lives) in VS Code — **not** a subdirectory.
+
+### Install the C/C++ Extension Pack
+
+Open the Extensions panel and install the **C/C++ Extension Pack** by Microsoft. This provides IntelliSense, build task integration, and the `cppdbg` debugger used by the launch configurations.
+
+### Run the Debug Configuration
+
+Open the **Run and Debug** tab on the left sidebar. In the dropdown next to the green play button, select **Polyphase Editor** (Linux/Windows) or **Polyphase Editor - Mac** (macOS), then press the play button.
+
+VS Code will run the appropriate `make` task and then launch the editor under the debugger with the repository root as the working directory.
+
+<Note>
+  On Ubuntu 24.04+, GDB may hang on startup due to `debuginfod` symbol downloads. If you experience slow launches, set the following in your launch configuration:
+
+  ```json
+  "remoteEnv": {
+      "DEBUGINFOD_URLS": ""
+  }
+  ```
+
+  Or export it globally: `export DEBUGINFOD_URLS=""`
+</Note>
+
+</Steps>
+
+---
+
+## Terminal (Linux)
+
+<Steps>
+
+### Navigate to the Standalone Directory
+
+```bash
+cd Standalone
+```
+
+### Build the Editor
+
+```bash
+make -f Makefile_Linux_Editor
+```
+
+### Return to the Repository Root
+
+```bash
+cd ..
+```
+
+### Run the Editor
+
+```bash
+Standalone/Build/Linux/PolyphaseEditor.elf
+```
+
+<Warning>
+  It is important that the **working directory** is the repository root when running the binary. A binary launched from inside `Standalone/Build/Linux/` will fail to find `Engine/Assets` and `Engine/Shaders`.
+</Warning>
+
+</Steps>
+
+---
+
+## Terminal (macOS)
+
+<Steps>
+
+### Follow the macOS Setup
+
+Complete the [macOS Setup](/setup/mac) guide first — Xcode Command Line Tools, Vulkan SDK, devkitPro, and `bash Tools/prebuild_mac.sh` must all be done before building.
+
+### Navigate to the Standalone Directory
+
+```bash
+cd Standalone
+```
+
+### Build the Editor
+
+```bash
+make -f Makefile_Mac_Editor -j$(sysctl -n hw.ncpu)
+```
+
+Add `MAC_ARCH=universal` to produce an Apple Silicon + Intel binary:
+
+```bash
+make -f Makefile_Mac_Editor -j$(sysctl -n hw.ncpu) MAC_ARCH=universal
+```
+
+### Return to the Repository Root and Run
+
+```bash
+cd ..
+Standalone/Build/Mac/PolyphaseEditor
+```
+
+</Steps>
+
+---
+
+## Packaging
+
+### Windows
+
+When packaging for any platform on Windows, the devkitPro MSys2 shell provides the `make` and Linux commands needed by the build system.
+
+### Android
+
+Packaging for Android requires Android Studio with the following tools installed via the SDK Manager:
+
+| Component | Version |
+|-----------|---------|
+| Android SDK Build Tools | 34.0.0 |
+| Android NDK (Side by side) | 25.2.9519653 |
+| CMake | 3.22.1 |
+
+### macOS App Bundle
+
+Packaging the `macOS (App Bundle)` target requires a macOS host with Xcode Command Line Tools and the Vulkan SDK. macOS targets **cannot** be built through Docker.
+
+### Console Targets via Docker
+
+For reproducible console builds without installing toolchains locally, see the [Docker](/setup/docker) guide. Docker builds Linux, GameCube, Wii, and 3DS targets. Windows and macOS targets always require a native host.
+
+---
+
+## CMake Support
+
+CMake support is currently a work-in-progress with Linux tested. To try it:
+
+```bash
+git submodule update --init --recursive
+sudo apt install pkg-config libvorbis-dev
+```
+
+<Note>
+  The primary and fully supported build system is `make` with the platform Makefiles. CMake is an experimental alternative for Linux only.
+</Note>

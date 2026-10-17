@@ -1,0 +1,678 @@
+---
+title: "Input Lua API — Keyboard, Mouse, Gamepad & Touch"
+sidebarTitle: "Input"
+description: "Query keyboard keys, mouse buttons and position, gamepad buttons and axes, touch/pointer state, and cursor control from Lua in Polyphase Engine."
+---
+
+The `Input` global gives Lua scripts unified access to every supported input device: keyboard, mouse, gamepad/joystick, touch screen, and pointer. All functions return state for the current frame. "Pressed" means the button transitioned from up to down this frame; "down" means it is held; "released" means it transitioned from down to up this frame.
+
+---
+
+## Keyboard
+
+### Input.IsKeyDown
+
+```lua
+down = Input.IsKeyDown(key)
+```
+
+Returns `true` while the specified key is held.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `key` | `Key (integer)` | Key constant — see the `Key` enum |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `down` | `boolean` | Key is currently held |
+
+---
+
+### Input.IsKeyPressed
+
+```lua
+pressed = Input.IsKeyPressed(key)
+```
+
+Returns `true` only on the frame the key is first pressed down.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `key` | `Key (integer)` | Key to check |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `pressed` | `boolean` | Key was just pressed this frame |
+
+---
+
+### Input.IsKeyPressedRepeat
+
+```lua
+pressed = Input.IsKeyPressedRepeat(key)
+```
+
+Like `IsKeyPressed` but fires repeatedly while the key is held, mimicking OS key-repeat behaviour (useful for text-editing UI).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `key` | `Key (integer)` | Key to check |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `pressed` | `boolean` | Key pressed or auto-repeating this frame |
+
+---
+
+### Input.IsKeyReleased
+
+```lua
+released = Input.IsKeyReleased(key)
+```
+
+Returns `true` on the frame the key is released.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `key` | `Key (integer)` | Key to check |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `released` | `boolean` | Key was just released this frame |
+
+---
+
+### Input.IsControlDown
+
+```lua
+down = Input.IsControlDown()
+```
+
+Returns `true` if either the left or right Control key is held.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `down` | `boolean` | Any Control key is held |
+
+---
+
+### Input.IsShiftDown
+
+```lua
+down = Input.IsShiftDown()
+```
+
+Returns `true` if either the left or right Shift key is held.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `down` | `boolean` | Any Shift key is held |
+
+---
+
+### Input.GetKeysPressed
+
+```lua
+pressedKeys = Input.GetKeysPressed()
+```
+
+Returns an array of all `Key` values that were just pressed this frame.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `pressedKeys` | `table` | Array of pressed `Key (integer)` values |
+
+---
+
+### Input.IsAnyKeyPressed
+
+```lua
+pressed = Input.IsAnyKeyPressed()
+```
+
+Returns `true` if any key was pressed this frame.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `pressed` | `boolean` | At least one key was pressed |
+
+---
+
+### Input.ConvertKeyCodeToChar
+
+```lua
+char = Input.ConvertKeyCodeToChar(code)
+```
+
+Converts a `Key` integer constant to its ASCII character string.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `code` | `Key (integer)` | Key constant to convert |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `char` | `string` | Single-character string |
+
+```lua
+-- Basic keyboard character input
+function TextField:Tick(dt)
+    local keys = Input.GetKeysPressed()
+    for _, k in ipairs(keys) do
+        local ch = Input.ConvertKeyCodeToChar(k)
+        if ch ~= "" then
+            self.text = self.text .. ch
+        end
+    end
+    if Input.IsKeyPressed(Key.Backspace) then
+        self.text = self.text:sub(1, -2)
+    end
+end
+```
+
+---
+
+## Mouse
+
+### Input.IsMouseDown
+
+```lua
+down = Input.IsMouseDown(button)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `button` | `Mouse (integer)` | Mouse button constant — see the `Mouse` enum |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `down` | `boolean` | Button is held |
+
+---
+
+### Input.IsMousePressed
+
+```lua
+pressed = Input.IsMousePressed(button)
+```
+
+Returns `true` on the frame the button is first pressed.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `button` | `Mouse (integer)` | Mouse button |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `pressed` | `boolean` | Button was just pressed |
+
+---
+
+### Input.IsMouseReleased
+
+```lua
+released = Input.IsMouseReleased(button)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `button` | `Mouse (integer)` | Mouse button |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `released` | `boolean` | Button was just released |
+
+---
+
+### Input.GetMousePosition
+
+```lua
+x, y = Input.GetMousePosition()
+```
+
+Returns the current mouse cursor position in screen-space pixels.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `x` | `integer` | Horizontal pixel position |
+| `y` | `integer` | Vertical pixel position |
+
+---
+
+### Input.GetMouseDelta
+
+```lua
+deltaX, deltaY = Input.GetMouseDelta()
+```
+
+Returns the change in mouse position since the last frame.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `deltaX` | `integer` | Horizontal pixel delta |
+| `deltaY` | `integer` | Vertical pixel delta |
+
+---
+
+### Input.GetScrollWheelDelta
+
+```lua
+delta = Input.GetScrollWheelDelta()
+```
+
+Returns the scroll wheel change since the last frame.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `delta` | `integer` | Scroll wheel delta |
+
+---
+
+### Input.ShowCursor
+
+```lua
+Input.ShowCursor(show)
+```
+
+Shows or hides the mouse cursor.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `show` | `boolean` | `true` to show, `false` to hide |
+
+---
+
+### Input.TrapCursor
+
+```lua
+Input.TrapCursor(trap)
+```
+
+Constrains the mouse cursor to the active window bounds.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `trap` | `boolean` | Enable cursor trapping |
+
+---
+
+### Input.LockCursor
+
+```lua
+Input.LockCursor(lock)
+```
+
+Locks the cursor to the screen centre. Typically combined with `ShowCursor(false)` and `TrapCursor(true)` for first-person camera control.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `lock` | `boolean` | Enable cursor locking |
+
+---
+
+### Input.SetCursorPosition
+
+```lua
+Input.SetCursorPosition(x, y)
+```
+
+Moves the cursor to the given screen-space pixel position.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `x` | `integer` | X position in pixels |
+| `y` | `integer` | Y position in pixels |
+
+```lua
+-- First-person mouse look setup
+function FPSController:Start()
+    Input.ShowCursor(false)
+    Input.TrapCursor(true)
+    Input.LockCursor(true)
+end
+
+function FPSController:Tick(dt)
+    local dx, dy = Input.GetMouseDelta()
+    self.yaw   = self.yaw   + dx * self.sensitivity
+    self.pitch = self.pitch + dy * self.sensitivity
+end
+```
+
+---
+
+## Gamepad
+
+### Input.IsGamepadDown
+
+```lua
+down = Input.IsGamepadDown(button, index)
+```
+
+Returns `true` while a gamepad button is held.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `button` | `Gamepad (integer)` | — | Gamepad button constant — see the `Gamepad` enum |
+| `index` | `integer` | `1` | Gamepad port index |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `down` | `boolean` | Button is held |
+
+---
+
+### Input.IsGamepadPressed
+
+```lua
+pressed = Input.IsGamepadPressed(button, index)
+```
+
+Returns `true` on the frame a gamepad button is first pressed.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `button` | `Gamepad (integer)` | — | Gamepad button |
+| `index` | `integer` | `1` | Gamepad port |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `pressed` | `boolean` | Button was just pressed |
+
+---
+
+### Input.IsGamepadReleased
+
+```lua
+released = Input.IsGamepadReleased(button, index)
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `button` | `Gamepad (integer)` | — | Gamepad button |
+| `index` | `integer` | `1` | Gamepad port |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `released` | `boolean` | Button was just released |
+
+---
+
+### Input.GetGamepadAxis
+
+```lua
+value = Input.GetGamepadAxis(axis, index)
+```
+
+Returns the current value of a gamepad axis (e.g. left stick X). Values range from `0` to `1`.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `axis` | `Gamepad (integer)` | — | Axis constant from the `Gamepad` enum (axis IDs are at the bottom of the enum) |
+| `index` | `integer` | `1` | Gamepad port |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `value` | `number` | Axis value in `[0, 1]` |
+
+---
+
+### Input.GetGamepadGyro
+
+```lua
+value = Input.GetGamepadGyro(index)
+```
+
+Returns the gyroscope x/y/z vector for the gamepad. Currently only supported on 3DS.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `index` | `integer` | `1` | Gamepad port |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `value` | `Vector` | Gyroscope vector |
+
+---
+
+### Input.GetGamepadAcceleration
+
+```lua
+value = Input.GetGamepadAcceleration(index)
+```
+
+Returns the accelerometer x/y/z vector for the gamepad. Currently only supported on 3DS.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `index` | `integer` | `1` | Gamepad port |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `value` | `Vector` | Accelerometer vector |
+
+---
+
+### Input.GetGamepadType
+
+```lua
+type = Input.GetGamepadType(index)
+```
+
+Returns a string describing the type of connected controller. Most useful on Wii where the controller type varies (Wiimote, Classic, GameCube).
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `index` | `integer` | `1` | Gamepad port |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `type` | `string` | Controller type string |
+
+---
+
+### Input.IsGamepadConnected
+
+```lua
+connected = Input.IsGamepadConnected(index)
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `index` | `integer` | `1` | Gamepad port |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `connected` | `boolean` | Whether a gamepad is plugged into that port |
+
+```lua
+-- Gamepad movement example
+function Player:Tick(dt)
+    if not Input.IsGamepadConnected(1) then return end
+
+    local moveX = Input.GetGamepadAxis(Gamepad.LeftStickX, 1)
+    local moveY = Input.GetGamepadAxis(Gamepad.LeftStickY, 1)
+    self:Move(Vec(moveX, 0, moveY) * self.speed * dt)
+
+    if Input.IsGamepadPressed(Gamepad.A, 1) then
+        self:Jump()
+    end
+end
+```
+
+---
+
+## Touch & Pointer
+
+Touch and pointer functions share an `index` parameter for multi-touch support. Pointer functions unify touch and mouse into one interface.
+
+### Input.IsTouchDown
+
+```lua
+down = Input.IsTouchDown(index)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `integer` | Touch index (1-based) |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `down` | `boolean` | Touch is currently held |
+
+---
+
+### Input.GetTouchPosition
+
+```lua
+x, y = Input.GetTouchPosition(index)
+```
+
+Returns the touch position in screen-space pixels.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `index` | `integer` | `1` | Touch index |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `x` | `integer` | X position |
+| `y` | `integer` | Y position |
+
+---
+
+### Input.GetTouchPositionNormalized
+
+```lua
+x, y = Input.GetTouchPositionNormalized(index)
+```
+
+Returns the touch position normalized to the range `-1` to `1`.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `index` | `integer` | `1` | Touch index |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `x` | `number` | Normalized X in `[-1, 1]` |
+| `y` | `number` | Normalized Y in `[-1, 1]` |
+
+---
+
+### Input.IsPointerDown
+
+```lua
+down = Input.IsPointerDown(index)
+```
+
+Unified pointer check (mouse or finger/stylus).
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `index` | `integer` | `1` | Pointer index |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `down` | `boolean` | Pointer is held |
+
+---
+
+### Input.IsPointerPressed
+
+```lua
+pressed = Input.IsPointerPressed(index)
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `index` | `integer` | `1` | Pointer index |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `pressed` | `boolean` | Pointer was just pressed |
+
+---
+
+### Input.IsPointerReleased
+
+```lua
+released = Input.IsPointerReleased(index)
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `index` | `integer` | `1` | Pointer index |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `released` | `boolean` | Pointer was just released |
+
+---
+
+### Input.GetPointerPosition
+
+```lua
+x, y = Input.GetPointerPosition(index)
+```
+
+Returns the pointer position in screen-space pixels.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `index` | `integer` | `1` | Pointer index |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `x` | `integer` | X position |
+| `y` | `integer` | Y position |
+
+---
+
+### Input.GetPointerPositionNormalized
+
+```lua
+x, y = Input.GetPointerPositionNormalized(index)
+```
+
+Returns the pointer position normalized to `-1` to `1`.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `index` | `integer` | `1` | Pointer index |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `x` | `number` | Normalized X |
+| `y` | `number` | Normalized Y |
+
+---
+
+## Soft Keyboard
+
+### Input.ShowSoftKeyboard
+
+```lua
+text = Input.ShowSoftKeyboard(show)
+```
+
+Shows or hides the on-screen software keyboard. On Android the keyboard is asynchronous and this function returns `nil`. On 3DS input is synchronous and the entered text is returned directly when `show` is `true`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `show` | `boolean` | Whether to show the keyboard |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `text` | `string\|nil` | Input text (3DS synchronous) or `nil` (async platforms) |
+
+---
+
+### Input.IsSoftKeyboardShown
+
+```lua
+shown = Input.IsSoftKeyboardShown()
+```
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `shown` | `boolean` | Whether the software keyboard is currently visible |

@@ -1,0 +1,78 @@
+---
+title: "Polyphase Engine — Cross-Platform 3D Game Engine"
+sidebarTitle: "Introduction"
+description: "Polyphase is a modern 3D game engine targeting GameCube, Wii, 3DS, Windows, Linux, macOS, and Android with Lua scripting and a visual editor."
+---
+
+Polyphase is a cross-platform 3D game engine built for both modern desktop platforms and classic Nintendo consoles. It targets **GameCube**, **Wii**, **Nintendo 3DS**, **Windows**, **Linux**, **macOS** (Apple Silicon and Intel), and **Android** — all from a single project and a unified visual editor. Polyphase is a modernized fork of [Octave Game Engine](https://github.com/mholtkamp/octave) with expanded platform support, a Vulkan renderer, Lua scripting, and a Docker-based build pipeline for reproducible console packaging.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Multi-Platform Targeting" icon="layer-group">
+    Build and package your game for GameCube, Wii, 3DS, Windows, Linux, macOS, and Android from a single project. The editor's Build Profiles system manages platform-specific settings and invokes the correct toolchain for each target.
+  </Card>
+  <Card title="Lua Scripting" icon="code">
+    Write game logic in Lua. Scripts hot-reload in the editor and can be either interpreted at runtime or baked into the binary with embedded mode. The full engine API is exposed through documented Lua bindings.
+  </Card>
+  <Card title="Visual Node Graph Editor" icon="diagram-project">
+    Build scenes visually using a node-based hierarchy. Nodes include `StaticMesh3D`, `SkeletalMesh3D`, `PointLight3D`, `DirectionalLight3D`, `Camera3D`, `Particle3D`, `Audio3D`, `Box3D`, `Sphere3D`, and more.
+  </Card>
+  <Card title="Native Addons" icon="puzzle-piece">
+    Extend the engine with C++ native addons. Addons declare platform-specific sources, libraries, and CMake projects in a `package.json` manifest. The editor builds, loads, and hot-reloads addon DLLs automatically.
+  </Card>
+  <Card title="Built-in Networking" icon="network-wired">
+    Networked multiplayer is a first-class citizen. The engine includes networking primitives and the editor can send builds directly to Wii hardware over the network with `wiiload`.
+  </Card>
+  <Card title="Headless & Docker Builds" icon="docker">
+    Run the editor without a GUI for CI/CD pipelines. Headless mode compiles assets, embeds Lua scripts, compiles SPIR-V shaders, and invokes platform toolchains — all scriptable with `-headless`, `-project`, and `-build` flags.
+  </Card>
+  <Card title="Vulkan Renderer" icon="display">
+    The desktop and Android renderer uses Vulkan. On macOS, Vulkan runs on top of MoltenVK. Validation layers, SPIR-V shader compilation via `glslc`, and optional path-tracing mode are included.
+  </Card>
+  <Card title="Asset Pipeline" icon="gears">
+    Assets are cooked to platform-specific `.oct` files and either loose-packed or compiled into `EmbeddedAssets.cpp` for console and single-binary deployments. The pipeline is triggered from the editor or headless mode.
+  </Card>
+</CardGroup>
+
+## Supported Platforms
+
+| Platform | Renderer | Notes |
+|---|---|---|
+| Windows | Vulkan | Built with Visual Studio 2022, packaged as `.exe` |
+| Linux | Vulkan | Built with `g++`/`make`, packaged as `.elf` or AppImage/RPM |
+| macOS | Vulkan (MoltenVK) | Universal binary (arm64 + x86_64), packaged as `.app` |
+| Android | Vulkan | Built with Android NDK 25.2, packaged as `.apk` |
+| Wii | GX | Compiled with devkitPPC, output is a `.dol` file |
+| GameCube | GX | Compiled with devkitPPC + libogc2, output is a `.dol` file |
+| Nintendo 3DS | citro3d | Compiled with devkitARM, output is `.3dsx` or installable `.cia` |
+
+## Getting Started
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install dependencies, build or download the editor, create a project, add a scene, and package for Wii in minutes.
+  </Card>
+  <Card title="Editor Overview" icon="window-restore" href="/editor-overview">
+    Learn the panels, hotkeys, headless mode CLI flags, and supported build targets in the visual editor.
+  </Card>
+  <Card title="Windows Setup" icon="windows" href="/setup/windows">
+    Install Visual Studio 2022, Vulkan SDK, devkitPro toolchains, and run `prebuild.bat`.
+  </Card>
+  <Card title="Linux Setup" icon="linux" href="/setup/linux">
+    Install build essentials, Vulkan SDK, devkitPro, libogc2, and run `prebuild.sh`.
+  </Card>
+  <Card title="macOS Setup" icon="apple" href="/setup/mac">
+    Install Xcode CLT, Vulkan SDK (MoltenVK), Homebrew tools, and devkitPro console toolchains.
+  </Card>
+  <Card title="Docker Builds" icon="docker" href="/setup/docker">
+    Use the Docker build system for reproducible console and Linux builds without installing toolchains locally.
+  </Card>
+</CardGroup>
+
+## Resources
+
+- [Lua API Documentation](https://Polyphase-Labs.github.io/Polyphase-Engine/Lua/)
+- [C++ API Documentation](https://Polyphase-Labs.github.io/Polyphase-Engine/api/annotated.html)
+- [Tutorial Video (Octave v5)](https://youtu.be/0CHLn0ie-DY)
+- [GitHub Repository](https://github.com/Polyphase-Labs/Polyphase-Engine)

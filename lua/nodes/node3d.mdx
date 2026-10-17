@@ -1,0 +1,390 @@
+---
+title: "Node3D — 3D Transform Lua API for Polyphase Engine"
+sidebarTitle: "Node3D"
+description: "Node3D adds a full 3D transform to any node: position, rotation (Euler & quaternion), scale, world-space queries, LookAt, and bone/socket attachment."
+---
+
+`Node3D` extends `Node` with a complete 3D transform. Every 3D scene object — meshes, lights, cameras, particles — inherits from `Node3D`. A node's final world-space transform is the product of its own relative transform and all ancestor transforms up the hierarchy.
+
+All methods on the [Node base class](/lua/nodes/node) are also available on `Node3D`.
+
+---
+
+## Relative Position
+
+### `Node3D:GetPosition()`
+
+Get this node's position relative to its parent.
+
+**Returns:** `Vector` — relative position.
+
+---
+
+### `Node3D:SetPosition(position)`
+
+Set this node's relative position.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `position` | `Vector` | Relative position. |
+
+```lua
+-- Move a node 5 units along X
+self:SetPosition(Vec(5, 0, 0))
+```
+
+---
+
+## Relative Rotation
+
+### `Node3D:GetRotation()`
+
+Get this node's rotation relative to its parent as Euler angles in degrees.
+
+**Returns:** `Vector` — Euler angles in degrees (pitch, yaw, roll).
+
+---
+
+### `Node3D:SetRotation(rotation)`
+
+Set this node's relative rotation from Euler angles in degrees.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `rotation` | `Vector` | Euler angles in degrees. |
+
+```lua
+self:SetRotation(Vec(0, 90, 0))  -- face right
+```
+
+---
+
+### `Node3D:GetRotationQuat()`
+
+Get this node's relative rotation as a quaternion.
+
+**Returns:** `Vector` — quaternion (x, y, z, w).
+
+---
+
+### `Node3D:SetRotationQuat(rotQuat)`
+
+Set this node's relative rotation from a quaternion.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `rotQuat` | `Vector` | Quaternion (x, y, z, w). |
+
+---
+
+## Relative Scale
+
+### `Node3D:GetScale()`
+
+Get this node's scale relative to its parent.
+
+**Returns:** `Vector` — relative scale.
+
+---
+
+### `Node3D:SetScale(scale)`
+
+Set this node's relative scale.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `scale` | `Vector` | Relative scale. |
+
+```lua
+self:SetScale(Vec(2, 2, 2))  -- double size
+```
+
+---
+
+## World-Space Queries
+
+### `Node3D:GetWorldPosition()`
+
+Get this node's position in world space.
+
+**Returns:** `Vector` — world position.
+
+---
+
+### `Node3D:SetWorldPosition(position)`
+
+Set this node's position in world space.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `position` | `Vector` | World position. |
+
+---
+
+### `Node3D:GetWorldRotation()`
+
+Get this node's world-space rotation as Euler angles in degrees.
+
+**Returns:** `Vector` — world rotation in degrees.
+
+---
+
+### `Node3D:SetWorldRotation(rotEuler)`
+
+Set this node's world-space rotation from Euler angles.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `rotEuler` | `Vector` | World rotation in degrees. |
+
+---
+
+### `Node3D:GetWorldRotationQuat()`
+
+Get this node's world-space rotation as a quaternion.
+
+**Returns:** `Vector` — world quaternion.
+
+---
+
+### `Node3D:SetWorldRotationQuat(rotQuat)`
+
+Set this node's world-space rotation from a quaternion.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `rotQuat` | `Vector` | World quaternion. |
+
+---
+
+### `Node3D:GetWorldScale()`
+
+Get this node's scale in world space.
+
+**Returns:** `Vector` — world scale.
+
+---
+
+### `Node3D:SetWorldScale(scale)`
+
+Set this node's world-space scale.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `scale` | `Vector` | World scale. |
+
+---
+
+## Rotation Helpers
+
+### `Node3D:AddRotation(rotEuler)`
+
+Add a relative rotation (Euler angles in degrees) to the current rotation.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `rotEuler` | `Vector` | Rotation delta in degrees. |
+
+```lua
+-- Spin 1 degree per tick around Y
+self:AddRotation(Vec(0, 1, 0))
+```
+
+---
+
+### `Node3D:AddRotationQuat(rotQuat)`
+
+Add a relative rotation expressed as a quaternion.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `rotQuat` | `Vector` | Quaternion rotation delta. |
+
+---
+
+### `Node3D:AddWorldRotation(rotEuler)`
+
+Add a world-space rotation in Euler degrees.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `rotEuler` | `Vector` | World-space rotation delta in degrees. |
+
+---
+
+### `Node3D:AddWorldRotationQuat(rotQuat)`
+
+Add a world-space rotation from a quaternion.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `rotQuat` | `Vector` | World-space quaternion delta. |
+
+---
+
+### `Node3D:RotateAround(pivot, axis, degrees)`
+
+Rotate this node around a pivot point in world space.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `pivot` | `Vector` | World-space pivot point. |
+| `axis` | `Vector` | World-space rotation axis. |
+| `degrees` | `number` | Degrees to rotate. |
+
+```lua
+-- Orbit around origin along Y axis
+self:RotateAround(Vec(0,0,0), Vec(0,1,0), 1.0)
+```
+
+---
+
+## Orientation
+
+### `Node3D:LookAt(worldPos, up)`
+
+Rotate this node so it faces a given world-space position.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `worldPos` | `Vector` | World-space target position. |
+| `up` | `Vector` | Up direction. Defaults to `Vec(0,1,0)`. |
+
+```lua
+local target = enemy:GetWorldPosition()
+self:LookAt(target)
+```
+
+---
+
+### `Node3D:GetForwardVector()`
+
+Get this node's world-space forward direction.
+
+**Returns:** `Vector` — forward vector.
+
+---
+
+### `Node3D:GetRightVector()`
+
+Get this node's world-space right direction.
+
+**Returns:** `Vector` — right vector.
+
+---
+
+### `Node3D:GetUpVector()`
+
+Get this node's world-space up direction.
+
+**Returns:** `Vector` — up vector.
+
+---
+
+## Transform Inheritance
+
+### `Node3D:GetInheritTransform()`
+
+Check whether this node inherits transforms from its parent.
+
+**Returns:** `boolean` — `true` if transform inheritance is enabled.
+
+---
+
+### `Node3D:SetInheritTransform(inheritTransform)`
+
+Set whether this node should inherit its parent's transform.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `inheritTransform` | `boolean` | `true` to inherit parent transform. |
+
+---
+
+## Bone & Socket Attachment
+
+### `Node3D:AttachToBone(skelMeshNode, boneName, keepWorldTransform, childIndex)`
+
+Attach this node to a specific bone on a `SkeletalMesh3D`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `skelMeshNode` | `SkeletalMesh3D` | Mesh node to attach to. |
+| `boneName` | `string` | Bone name. |
+| `keepWorldTransform` | `boolean` | Maintain world-space transform. Defaults to `false`. |
+| `childIndex` | `integer` | Position in parent's child array. `0` appends at end. |
+
+---
+
+### `Node3D:AttachToSocket(skelMeshNode, socketName, keepWorldTransform, childIndex)`
+
+Attach this node to a named socket on a `SkeletalMesh3D`. If no socket by that name exists, it falls back to treating the name as a bone name.
+
+<Tip>Use `AttachToSocket` for the initial attachment. To move an already-attached node between sockets on the same parent (e.g. draw/sheathe a weapon), use `SetAttachSocket` instead — it avoids the reparent overhead.</Tip>
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `skelMeshNode` | `SkeletalMesh3D` | Mesh node to attach to. |
+| `socketName` | `string` | Socket or bone name. |
+| `keepWorldTransform` | `boolean` | Maintain world-space transform. Defaults to `false`. |
+| `childIndex` | `integer` | Position in parent's child array. `0` appends at end. |
+
+---
+
+### `Node3D:SetAttachSocket(socketName)`
+
+Move this node to a different socket or bone on its current parent without reparenting. Pass an empty string to stop following the bone and follow the parent's own transform instead.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `socketName` | `string` | Socket or bone name. Empty string detaches. |
+
+```lua
+sword:AttachToSocket(character, "Sheath_Back")   -- initial attach
+sword:SetAttachSocket("WeaponHand_R")            -- draw
+sword:SetAttachSocket("Sheath_Back")             -- sheathe
+```
+
+---
+
+### `Node3D:GetAttachSocket()`
+
+Get the name of the socket or bone this node is currently attached to.
+
+**Returns:** `string` — socket or bone name, or empty string if not attached.
+
+---
+
+## Transform Update
+
+### `Node3D:UpdateTransform(updateChildren)`
+
+Force a recalculation of this node's transform matrix. Normally automatic; only needed in unusual ordering scenarios.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `updateChildren` | `boolean` | If `true`, recursively update all children too. |
+
+---
+
+## Usage Examples
+
+```lua
+-- Smoothly chase a target position each frame
+function CameraRig:Tick(dt)
+    local targetPos = self.target:GetWorldPosition() + Vec(0, 5, -10)
+    local current   = self:GetWorldPosition()
+    self:SetWorldPosition(Vector.Damp(current, targetPos, 0.01, dt))
+    self:LookAt(self.target:GetWorldPosition())
+end
+```
+
+```lua
+-- Instantiate a mesh and place it at a named spawn point
+function Level:SpawnEnemy(spawnNode)
+    local enemy = Node.Construct("SkeletalMesh3D")
+    enemy:SetWorldPosition(spawnNode:GetWorldPosition())
+    enemy:SetWorldRotation(spawnNode:GetWorldRotation())
+    self:AddChild(enemy)
+end
+```

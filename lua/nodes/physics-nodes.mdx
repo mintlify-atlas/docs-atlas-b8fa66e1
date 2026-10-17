@@ -1,0 +1,596 @@
+---
+title: "Physics Nodes — Primitive3D, Box3D, Sphere3D, Capsule3D, NavMesh3D, Spline3D"
+sidebarTitle: "Physics Nodes"
+description: "Lua API for Polyphase physics and utility nodes: Primitive3D collision and physics, Box3D, Sphere3D, Capsule3D shapes, NavMesh3D volumes, and Spline3D paths."
+---
+
+Physics and spatial-utility nodes all build on `Primitive3D`, which adds collision shapes, physics simulation, shadow flags, and occlusion controls to any `Node3D`. `Box3D`, `Sphere3D`, and `Capsule3D` define specific collision shapes. `NavMesh3D` defines navigation volumes. `Spline3D` defines a parametric path for cameras, trains, or cutscene objects.
+
+All inherit from [`Node3D`](/lua/nodes/node3d) and [`Node`](/lua/nodes/node).
+
+---
+
+## Primitive3D (base class)
+
+`Primitive3D` is the base for all nodes that support physics simulation and collision.
+
+### Physics Simulation
+
+#### `Primitive3D:EnablePhysics(enable)`
+
+Enable or disable physics simulation on this node.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enable` | `boolean` | Enable physics. |
+
+---
+
+#### `Primitive3D:IsPhysicsEnabled()`
+
+**Returns:** `boolean` — `true` if physics simulation is active.
+
+---
+
+#### `Primitive3D:EnableCollision(enable)`
+
+Enable or disable collision. Nodes with collision enabled participate in ray/sweep tests and physics interactions.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enable` | `boolean` | Enable collision. |
+
+---
+
+#### `Primitive3D:IsCollisionEnabled()`
+
+**Returns:** `boolean` — `true` if collision is enabled.
+
+---
+
+#### `Primitive3D:EnableOverlaps(enable)`
+
+Enable or disable overlap event generation.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enable` | `boolean` | Enable overlaps. |
+
+---
+
+#### `Primitive3D:AreOverlapsEnabled()`
+
+**Returns:** `boolean` — `true` if overlap events are enabled.
+
+---
+
+### Physics Properties
+
+#### `Primitive3D:GetMass()` / `Primitive3D:SetMass(mass)`
+
+Physical mass. Only used during physics simulation.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `mass` | `number` | Mass value. |
+
+---
+
+#### `Primitive3D:GetLinearDamping()` / `Primitive3D:SetLinearDamping(linearDamping)`
+
+Controls how linear velocity decays over time.
+
+---
+
+#### `Primitive3D:GetAngularDamping()` / `Primitive3D:SetAngularDamping(angularDamping)`
+
+Controls how angular velocity decays over time.
+
+---
+
+#### `Primitive3D:GetRestitution()` / `Primitive3D:SetRestitution(restitution)`
+
+Bounciness. `0` = no bounce; `1` = perfectly elastic. Values above `1` add energy on each collision.
+
+---
+
+#### `Primitive3D:GetFriction()` / `Primitive3D:SetFriction(friction)`
+
+Surface friction coefficient.
+
+---
+
+#### `Primitive3D:GetRollingFriction()` / `Primitive3D:SetRollingFriction(rollingFriction)`
+
+Rolling friction — resistance to rolling motion.
+
+---
+
+#### `Primitive3D:GetLinearFactor()` / `Primitive3D:SetLinearFactor(factor)`
+
+Per-axis linear motion lock. A component of `0` prevents movement on that axis.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `factor` | `Vector` | Linear factor (each component 0 or 1). |
+
+```lua
+-- Constrain to XZ plane
+self:SetLinearFactor(Vec(1, 0, 1))
+```
+
+---
+
+#### `Primitive3D:GetAngularFactor()` / `Primitive3D:SetAngularFactor(factor)`
+
+Per-axis angular motion lock.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `factor` | `Vector` | Angular factor (each component 0 or 1). |
+
+---
+
+### Collision Groups
+
+#### `Primitive3D:GetCollisionGroup()` / `Primitive3D:SetCollisionGroup(group)`
+
+Collision group bitmask. There are 8 groups (`0x01`, `0x02`, `0x04` … `0x80`). A node can belong to multiple groups with bitwise OR.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `group` | `integer` | Group bitmask. |
+
+---
+
+#### `Primitive3D:GetCollisionMask()` / `Primitive3D:SetCollisionMask(mask)`
+
+Collision mask. Two nodes collide only when `nodeA.mask & nodeB.group` **and** `nodeB.mask & nodeA.group` are both non-zero.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `mask` | `integer` | Mask bitmask. |
+
+```lua
+-- Node in group 0x01, collides only with group 0x02
+self:SetCollisionGroup(0x01)
+self:SetCollisionMask(0x02)
+```
+
+---
+
+### Velocity & Forces
+
+#### `Primitive3D:GetLinearVelocity()` / `Primitive3D:SetLinearVelocity(velocity)`
+
+Linear velocity. Physics-only.
+
+---
+
+#### `Primitive3D:GetAngularVelocity()` / `Primitive3D:SetAngularVelocity(velocity)`
+
+Angular velocity. Physics-only.
+
+---
+
+#### `Primitive3D:AddLinearVelocity(velocity)`
+
+Add to the current linear velocity.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `velocity` | `Vector` | Velocity to add. |
+
+---
+
+#### `Primitive3D:AddAngularVelocity(velocity)`
+
+Add to the current angular velocity.
+
+---
+
+#### `Primitive3D:AddForce(force)`
+
+Apply a continuous force to this node.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `force` | `Vector` | Force vector. |
+
+---
+
+#### `Primitive3D:AddImpulse(impulse)`
+
+Apply an instantaneous impulse.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `impulse` | `Vector` | Impulse vector. |
+
+```lua
+-- Launch the object upward on interaction
+self:AddImpulse(Vec(0, 500, 0))
+```
+
+---
+
+#### `Primitive3D:ClearForces()`
+
+Clear all forces currently acting on this node.
+
+---
+
+### Shadow & Occlusion
+
+#### `Primitive3D:EnableCastShadows(enable)` / `Primitive3D:ShouldCastShadows()`
+
+Control whether this node casts projected shadows (Vulkan only).
+
+---
+
+#### `Primitive3D:EnableReceiveShadows(enable)` / `Primitive3D:ShouldReceiveShadows()`
+
+Control whether this node receives projected shadows (Vulkan only).
+
+---
+
+#### `Primitive3D:EnableReceiveSimpleShadows(enable)` / `Primitive3D:ShouldReceiveSimpleShadows()`
+
+Control simple shadow reception from `ShadowMesh3D` nodes (all platforms).
+
+---
+
+#### `Primitive3D:EnableOccluder(enable)` / `Primitive3D:IsOccluder()`
+
+Mark this node as an occluder for baked occlusion culling.
+
+---
+
+#### `Primitive3D:EnableOccludee(enable)` / `Primitive3D:IsOccludee()`
+
+Mark this node as an occludee — it will be skipped when baked data shows it is hidden.
+
+---
+
+### Lighting Channels
+
+#### `Primitive3D:GetLightingChannels()` / `Primitive3D:SetLightingChannels(channels)`
+
+Controls which lights illuminate this node. Only lights on matching channels apply.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `channels` | `integer` | Channel bitmask (e.g. `0xff` = all). |
+
+---
+
+### Sweep & Bounds
+
+#### `Primitive3D:SweepToWorldPosition(position, mask, testOnly)`
+
+Sweep this node toward a position and stop at the first collision.
+
+**Alias:** `SweepToPosition`
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `position` | `Vector` | Target world position. |
+| `mask` | `integer` | Collision mask. `0` = use this node's own mask. |
+| `testOnly` | `boolean` | If `true`, do not move or trigger `OnCollision`. |
+
+**Returns:** `table`:
+- `Vector start`
+- `Vector end`
+- `Primitive3D hitNode`
+- `Vector hitNormal`
+- `Vector hitPosition`
+- `number hitFraction` (0–1: how far along the sweep)
+
+```lua
+local result = self:SweepToWorldPosition(targetPos, 0, false)
+if result.hitNode then
+    Log.Debug("Hit: " .. result.hitNode:GetName())
+end
+```
+
+---
+
+#### `Primitive3D:GetBounds()`
+
+Get the world-space spherical bounds of this primitive.
+
+**Returns:** `table`:
+- `Vector center` — world-space center
+- `number radius` — world-space radius
+
+---
+
+## Box3D
+
+A box collision shape. Inherits `Primitive3D` → `Node3D` → `Node`.
+
+### `Box3D:GetExtents()`
+
+Get the full (not half) extents of the box.
+
+**Returns:** `Vector` — full extents (width, height, depth).
+
+---
+
+### `Box3D:SetExtents(extents)`
+
+Set the full extents of the box.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `extents` | `Vector` | Full extents. |
+
+```lua
+local trigger = Node.Construct("Box3D")
+trigger:SetExtents(Vec(4, 2, 4))
+trigger:EnableCollision(false)
+trigger:EnableOverlaps(true)
+```
+
+---
+
+## Sphere3D
+
+A spherical collision shape. Inherits `Primitive3D` → `Node3D` → `Node`.
+
+### `Sphere3D:GetRadius()`
+
+Get the sphere's radius.
+
+**Returns:** `number` — radius.
+
+---
+
+### `Sphere3D:SetRadius(radius)`
+
+Set the sphere's radius.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `radius` | `number` | Radius. |
+
+---
+
+## Capsule3D
+
+A capsule (cylinder with hemispherical caps) collision shape. Inherits `Primitive3D` → `Node3D` → `Node`.
+
+### `Capsule3D:GetHeight()` / `Capsule3D:SetHeight(height)`
+
+Height of the capsule.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `height` | `number` | Capsule height. |
+
+---
+
+### `Capsule3D:GetRadius()` / `Capsule3D:SetRadius(radius)`
+
+Radius of the capsule.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `radius` | `number` | Capsule radius. |
+
+```lua
+-- Standard character capsule
+local capsule = Node.Construct("Capsule3D")
+capsule:SetHeight(1.8)
+capsule:SetRadius(0.35)
+capsule:EnablePhysics(true)
+capsule:SetAngularFactor(Vec(0, 0, 0))  -- don't tip over
+```
+
+---
+
+## NavMesh3D
+
+`NavMesh3D` defines a navigation volume node that constrains nav mesh generation. It extends `Box3D`, so all extent and Primitive3D methods apply.
+
+<Note>NavMesh3D inherits from Box3D. Nav-specific settings (Nav Bounds, Nav Overlay, Nav Negator, Cull 90° Walls, Wall Cull Threshold) are editor-only properties set in the inspector.</Note>
+
+### `NavMesh3D:GetExtents()`
+
+Get the full extents of the nav volume.
+
+**Returns:** `Vector` — full extents.
+
+---
+
+### `NavMesh3D:SetExtents(extents)`
+
+Set the full extents of the nav volume.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `extents` | `Vector` | Full extents. |
+
+```lua
+local navBounds = self:FindChild("NavVolume")
+navBounds:SetExtents(Vec(100, 10, 100))
+```
+
+---
+
+## Spline3D
+
+`Spline3D` defines a parametric 3D path. It supports playback (follow behavior), link chaining between splines, and parametric sampling.
+
+Inherits: `Node3D` → `Node`
+
+### Control Points
+
+#### `Spline3D:AddPoint(point)`
+
+Append a control point in local space.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `point` | `Vector` | Local-space point. |
+
+---
+
+#### `Spline3D:ClearPoints()`
+
+Remove all control points.
+
+---
+
+#### `Spline3D:GetPointCount()`
+
+**Returns:** `integer` — number of control points.
+
+---
+
+#### `Spline3D:GetPoint(index)`
+
+Get a control point by 1-based index.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `integer` | 1-based index. |
+
+**Returns:** `Vector` — point in local space.
+
+---
+
+#### `Spline3D:SetPoint(index, point)`
+
+Set a control point.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `integer` | 1-based index. |
+| `point` | `Vector` | New local-space position. |
+
+---
+
+### Sampling
+
+#### `Spline3D:GetPositionAt(t)`
+
+Sample the spline position at parameter `t`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `t` | `number` | Parametric value along the spline. |
+
+**Returns:** `Vector` — local-space position.
+
+---
+
+#### `Spline3D:GetTangentAt(t)`
+
+Sample the spline tangent direction at parameter `t`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `t` | `number` | Parametric value. |
+
+**Returns:** `Vector` — tangent in local space.
+
+```lua
+-- Move an object along the spline
+function TrainCar:Tick(dt)
+    self.t = (self.t + dt * 0.1) % 1.0
+    local pos = self.spline:GetPositionAt(self.t)
+    self:SetWorldPosition(self.spline:GetWorldPosition() + pos)
+end
+```
+
+---
+
+### Playback
+
+#### `Spline3D:Play()`
+
+Start spline playback / follow behavior.
+
+---
+
+#### `Spline3D:Stop()`
+
+Stop spline playback.
+
+---
+
+#### `Spline3D:SetPaused(paused)` / `Spline3D:IsPaused()`
+
+Pause or resume active spline movement.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `paused` | `boolean` | `true` to pause. |
+
+---
+
+### Link System
+
+Splines can be chained together through link slots (1–64). A link defines a handoff point between two splines.
+
+#### `Spline3D:SetFollowLinkEnabled(index, enabled)` / `Spline3D:IsFollowLinkEnabled(index)`
+
+Enable or disable automatic follow for a link slot.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `integer` | Link slot (1–64). |
+| `enabled` | `boolean` | Auto-follow state. |
+
+---
+
+#### `Spline3D:IsNearLinkFrom(index, epsilon)`
+
+Check if playback is near the "from" endpoint for a link.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `integer` | Link slot (1–64). |
+| `epsilon` | `number` | Proximity threshold. Defaults to `0.05`. |
+
+**Returns:** `boolean` — near the from-endpoint.
+
+---
+
+#### `Spline3D:IsNearLinkTo(index, epsilon)`
+
+Check if playback is near the "to" endpoint for a link.
+
+**Returns:** `boolean` — near the to-endpoint.
+
+---
+
+#### `Spline3D:IsLinkDirectionForward(index, threshold)`
+
+Check whether travel direction aligns with the link's forward direction.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `integer` | Link slot (1–64). |
+| `threshold` | `number` | Optional direction threshold. |
+
+**Returns:** `boolean` — `true` if direction is considered forward.
+
+---
+
+#### `Spline3D:TriggerLink(index)`
+
+Force an immediate handoff on a specific link slot.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `integer` | Link slot (1–64). |
+
+**Returns:** `boolean` — `true` if the handoff was accepted.
+
+---
+
+#### `Spline3D:CancelActiveLink()`
+
+Cancel any active link transition in progress.

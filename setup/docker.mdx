@@ -1,0 +1,223 @@
+---
+title: "Docker Build System for Polyphase Engine"
+sidebarTitle: "Docker"
+description: "Use the Polyphase Docker build system for reproducible Linux, GameCube, Wii, and 3DS builds without installing toolchains on your host machine."
+---
+
+Polyphase includes a Docker build system that packages all required toolchains into a single container image. You can use it to build Polyphase games — and the editor itself — for Linux, GameCube, Wii, and Nintendo 3DS without installing any SDKs or cross-compilers on your host machine. This makes it ideal for CI/CD pipelines and team environments where consistent, reproducible builds are important.
+
+## What's in the Container
+
+The Docker image bundles:
+
+| Toolchain | Purpose |
+|-----------|---------|
+| **Vulkan SDK 1.3.275.0** | Linux editor and game builds, shader compilation |
+| **devkitPPC** | GameCube and Wii builds |
+| **devkitARM** | Nintendo 3DS builds |
+
+The image is approximately **5 GB** and requires an internet connection for the first build only.
+
+## Requirements
+
+- [Docker](https://docs.docker.com/get-docker/) installed on your host (Docker Desktop on Windows/macOS, Docker Engine on Linux)
+- Approximately 5 GB free disk space for the image
+- The Polyphase Engine repository cloned locally
+
+<Note>
+  macOS app bundle targets (`macOS (App Bundle)`) cannot be built inside Docker — they require a macOS host with Xcode Command Line Tools. Windows targets similarly require a native Windows host. Docker covers Linux, GameCube, Wii, and 3DS.
+</Note>
+
+## Build the Docker Image
+
+From the repository root, run the helper script to build the image:
+
+```bash
+./Docker/build.sh
+```
+
+Or build it manually:
+
+```bash
+docker build -f Docker/Dockerfile -t polyphase-engine .
+```
+
+<Tip>
+  If the devkitPro installation step fails during the image build, try rebuilding without the cache:
+
+  ```bash
+  docker build --no-cache -f Docker/Dockerfile -t polyphase-engine .
+  ```
+</Tip>
+
+## Available Build Commands
+
+| Command | Platform | Output | Project required |
+|---------|----------|--------|-----------------|
+| `build-editor` | Linux Editor | `PolyphaseEditor.elf` | Optional (recommended) |
+| `build-linux` | Linux Game | `Polyphase.elf` | Required |
+| `build-gcn` | Nintendo GameCube | `Polyphase.dol`, `Polyphase.elf` | Required |
+| `build-wii` | Nintendo Wii | `Polyphase.dol`, `Polyphase.elf` | Required |
+| `build-3ds` | Nintendo 3DS | `Polyphase.3dsx`, `Polyphase.smdh` | Required |
+
+## Volumes
+
+Mount these paths when running a container:
+
+| Volume | Purpose |
+|--------|---------|
+| `/game` | **Output directory** — build artifacts are copied here |
+| `/project` | **Your game project directory** — required for all game builds |
+
+<Warning>
+  Create the output directory on your host **before** running the container. If Docker creates it for you, it will be owned by root and you will need `sudo chmod -R 777 ./dist` or `sudo rm -rf ./dist` to manage it.
+</Warning>
+
+## Usage Examples
+
+### Build the Editor
+
+The editor can optionally include your project files. Including the project is recommended:
+
+```bash
+# With project (recommended)
+docker run --rm -v ./dist/Polyphase:/game -v ./MyGame:/project polyphase-engine build-editor
+
+# Without project
+docker run --rm -v ./output:/game polyphase-engine build-editor
+```
+
+The output directory will contain the full engine structure plus a ready-to-run `PolyphaseEditor.elf`:
+
+```
+dist/Polyphase/
+├── Engine/
+├── Standalone/
+├── External/
+├── ...
+└── PolyphaseEditor.elf
+```
+
+### Build a Linux Game
+
+```bash
+docker run --rm -v ./dist:/game -v ./MyGame:/project polyphase-engine build-linux
+```
+
+Output: `dist/Linux/Polyphase.elf`
+
+### Build for Nintendo 3DS
+
+```bash
+docker run --rm -v ./dist/3DS:/game -v ./MyGame:/project polyphase-engine build-3ds
+```
+
+Output:
+
+```
+dist/3DS/
+├── Polyphase.3dsx
+└── Polyphase.smdh
+```
+
+### Build for Nintendo GameCube
+
+```bash
+docker run --rm -v ./dist:/game -v ./MyGame:/project polyphase-engine build-gcn
+```
+
+Output:
+
+```
+dist/GCN/
+├── Polyphase.dol
+└── Polyphase.elf
+```
+
+### Build for Wii
+
+```bash
+docker run --rm -v ./dist:/game -v ./MyGame:/project polyphase-engine build-wii
+```
+
+Output: `dist/GCN/Polyphase.dol` (and `.elf`)
+
+### Interactive Shell
+
+For debugging or exploring the container environment:
+
+```bash
+docker run -it --rm -v ./output:/game -v ./MyGame:/project polyphase-engine bash
+```
+
+### Show Help
+
+```bash
+docker run --rm polyphase-engine help
+```
+
+## Project Structure
+
+Your game project directory (mounted at `/project`) should follow this layout:
+
+```
+MyGame/
+├── MyGame.oct      # Project file
+├── Assets/         # Game assets (textures, models, sounds, etc.)
+└── Scripts/        # Lua scripts (optional)
+```
+
+## VS Code Integration
+
+You can run Docker builds directly from VS Code via the Command Palette:
+
+1. Press `Ctrl+Shift+P` to open the Command Palette.
+2. Select **Tasks: Run Task**.
+3. Choose **Docker Build Editor - Linux**.
+
+## Headless Mode and Docker
+
+Under the hood, the Docker game build commands use the editor's **headless mode** to cook assets and compile the game binary. When you run `build-linux` or `build-wii`, the container launches `PolyphaseEditor.elf` with flags equivalent to:
+
+```bash
+./PolyphaseEditor.elf -headless -project "/project/MyGame.octp" -build Linux embedded
+```
+
+You can invoke headless mode directly in any Docker shell or CI script. See the [Editor Overview](/editor-overview#headless-mode) for all supported `-build` targets and flags.
+
+## CI/CD Integration
+
+A typical CI pipeline step using the Docker build system:
+
+```yaml
+# Example GitHub Actions step
+- name: Build for Nintendo Wii
+  run: |
+    mkdir -p dist/Wii
+    docker run --rm \
+      -v ${{ github.workspace }}/dist/Wii:/game \
+      -v ${{ github.workspace }}/MyGame:/project \
+      polyphase-engine build-wii
+```
+
+## Troubleshooting
+
+**"No project mounted at /project"**
+
+Game builds require a project directory. Add `-v ./MyGame:/project` to your `docker run` command.
+
+**Permission denied when deleting the output directory**
+
+Use Docker itself to clean the directory, which avoids the root ownership issue:
+
+```bash
+docker run --rm -v ./output:/game alpine rm -rf /game/*
+```
+
+**devkitPro installation fails during image build**
+
+Rebuild the image without the Docker layer cache:
+
+```bash
+docker build --no-cache -f Docker/Dockerfile -t polyphase-engine .
+```

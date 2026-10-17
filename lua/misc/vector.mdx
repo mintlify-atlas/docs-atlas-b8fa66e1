@@ -1,0 +1,412 @@
+---
+title: "Vector and Rect — Math Types in the Polyphase Lua API"
+sidebarTitle: "Vector"
+description: "Polyphase Lua math types: Vec() constructor, all Vector operations (dot, cross, lerp, normalize, distance, rotate, damp), and the Rect 2D rectangle type."
+---
+
+`Vector` is a 4-component table (`x`, `y`, `z`, `w`) used throughout the Polyphase Lua API for positions, directions, rotations (Euler and quaternion), colors (`r`, `g`, `b`, `a`), and UV coordinates. Create one with the global `Vec()` shorthand. Most math functions can be called either as static methods (`Vector.Dot(a, b)`) or as member methods on a vector instance (`a:Dot(b)`).
+
+`Rect` is a 2D rectangle with `x`, `y`, `w`, `h` fields used for widget layout.
+
+---
+
+## Vec() constructor
+
+```lua
+local v0   = Vec()              -- (0, 0, 0, 0)
+local v3   = Vec(1, 2, 3)       -- (1, 2, 3, 0)
+local v4   = Vec(1, 2, 3, 1)    -- (1, 2, 3, 1)
+local copy = Vec(v3)            -- copy from existing vector
+```
+
+`Vec()` is equivalent to `Vector.Create()`.
+
+---
+
+## Vector.Create(x, y, z, w) / Vector.Create(src)
+
+Create a new `Vector` by specifying components or copying another vector.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `x` | `number` | X component. Defaults to `0`. |
+| `y` | `number` | Y component. Defaults to `0`. |
+| `z` | `number` | Z component. Defaults to `0`. |
+| `w` | `number` | W component. Defaults to `0`. |
+
+**Returns:** `Vector` — new vector.
+
+---
+
+## Vector:Set(x, y, z, w) / Vector:Set(src)
+
+Set the components of an existing vector in place. Any `nil` components keep their current value.
+
+```lua
+local v = Vec(1, 2, 3)
+v:Set(nil, 10, nil)   -- v is now (1, 10, 3, 0)
+```
+
+---
+
+## Vector:Clone()
+
+Create a copy of this vector.
+
+**Returns:** `Vector` — new clone.
+
+---
+
+## Arithmetic Operators
+
+Vectors support `+`, `-`, `*`, `/` operators for component-wise arithmetic, and `==` / `~=` for equality.
+
+```lua
+local a = Vec(1, 2, 3)
+local b = Vec(4, 5, 6)
+local sum  = a + b          -- Vec(5, 7, 9)
+local diff = a - b          -- Vec(-3, -3, -3)
+local scaled = a * 2        -- Vec(2, 4, 6)
+local divided = b / 2       -- Vec(2, 2.5, 3)
+local neg = -a              -- Vec(-1, -2, -3)
+```
+
+---
+
+## Dot Products
+
+### `Vector.Dot(a, b)`
+
+4-component dot product.
+
+| Parameter | Type |
+|-----------|------|
+| `a` | `Vector` |
+| `b` | `Vector` |
+
+**Returns:** `number` — dot product.
+
+---
+
+### `Vector.Dot3(a, b)`
+
+3-component dot product (ignores W).
+
+**Returns:** `number` — dot product.
+
+---
+
+## Cross Product
+
+### `Vector.Cross(a, b)`
+
+Cross product of two 3D vectors.
+
+| Parameter | Type |
+|-----------|------|
+| `a` | `Vector` |
+| `b` | `Vector` |
+
+**Returns:** `Vector` — cross product.
+
+```lua
+local forward = Vec(0, 0, 1)
+local up      = Vec(0, 1, 0)
+local right   = Vector.Cross(forward, up)
+```
+
+---
+
+## Normalization
+
+### `Vector:Normalize()`
+
+Normalize the vector (make length = 1).
+
+**Returns:** `Vector` — normalized vector.
+
+---
+
+### `Vector:Normalize3()`
+
+Normalize using only the first three components.
+
+**Returns:** `Vector` — normalized vector.
+
+---
+
+## Length & Distance
+
+### `Vector:Length()`
+
+**Aliases:** `Magnitude`
+
+**Returns:** `number` — vector length.
+
+---
+
+### `Vector:Length2()`
+
+**Aliases:** `LengthSquared`, `Magnitude2`, `MagnitudeSquared`
+
+**Returns:** `number` — squared length (cheaper than `Length()` when you only need comparisons).
+
+---
+
+### `Vector.Distance(a, b)`
+
+Distance between two vectors.
+
+**Returns:** `number` — distance.
+
+---
+
+### `Vector.Distance2(a, b)`
+
+**Alias:** `DistanceSquared`
+
+**Returns:** `number` — squared distance.
+
+```lua
+local d = Vector.Distance(self:GetWorldPosition(), target:GetWorldPosition())
+if d < 3.0 then
+    -- close enough to interact
+end
+```
+
+---
+
+## Min, Max & Clamp
+
+### `Vector.Max(a, b)`
+
+Component-wise maximum of two vectors.
+
+**Returns:** `Vector` — max vector.
+
+---
+
+### `Vector.Min(a, b)`
+
+Component-wise minimum.
+
+**Returns:** `Vector` — min vector.
+
+---
+
+### `Vector:Clamp(min, max)`
+
+Clamp each component between the corresponding components of `min` and `max`.
+
+| Parameter | Type |
+|-----------|------|
+| `min` | `Vector` |
+| `max` | `Vector` |
+
+**Returns:** `Vector` — clamped vector.
+
+---
+
+## Interpolation & Smoothing
+
+### `Vector.Lerp(a, b, alpha)`
+
+Linear interpolation between `a` and `b`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `a` | `Vector` | Start vector. |
+| `b` | `Vector` | End vector. |
+| `alpha` | `number` | Blend factor 0–1. |
+
+**Returns:** `Vector` — interpolated result.
+
+```lua
+local pos = Vector.Lerp(startPos, endPos, t)
+```
+
+---
+
+### `Vector.Damp(source, target, smoothing, deltaTime)`
+
+Framerate-independent exponential smoothing. Lower `smoothing` values move more slowly. Try `0.005`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `source` | `Vector` | Current value. |
+| `target` | `Vector` | Target to approach. |
+| `smoothing` | `number` | Smoothing coefficient (0–1). |
+| `deltaTime` | `number` | Frame delta time in seconds. |
+
+**Returns:** `Vector` — new smoothed value.
+
+```lua
+function CameraRig:Tick(dt)
+    local targetPos = self.target:GetWorldPosition()
+    local current   = self:GetWorldPosition()
+    self:SetWorldPosition(Vector.Damp(current, targetPos, 0.01, dt))
+end
+```
+
+---
+
+## Angle Operations
+
+### `Vector.Angle(a, b)`
+
+Get the angle between two normalized vectors.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `a` | `Vector` | Normalized vector. |
+| `b` | `Vector` | Normalized vector. |
+
+**Returns:** `number` — angle in degrees.
+
+---
+
+### `Vector.SignedAngle(a, b)`
+
+Get the signed angle between two normalized vectors.
+
+**Returns:** `number` — signed angle in degrees.
+
+---
+
+## Reflection & Rotation
+
+### `Vector:Reflect(normal)`
+
+Reflect this vector against a normal.
+
+| Parameter | Type |
+|-----------|------|
+| `normal` | `Vector` |
+
+**Returns:** `Vector` — reflected vector.
+
+---
+
+### `Vector:Rotate(angle, axis)`
+
+Rotate this vector around an axis.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `angle` | `number` | Angle in degrees. |
+| `axis` | `Vector` | Rotation axis. |
+
+**Returns:** `Vector` — rotated vector.
+
+---
+
+### `Vector:Negate()`
+
+Return the negated vector. Equivalent to the unary `-` operator.
+
+**Returns:** `Vector` — negated vector.
+
+---
+
+## Component Access
+
+Use `.x`, `.y`, `.z`, `.w` for spatial data and `.r`, `.g`, `.b`, `.a` for colors — both map to the same underlying components.
+
+```lua
+local color = Vec(1.0, 0.5, 0.2, 1.0)
+Log.Debug("Red: " .. color.r)    -- 1.0
+Log.Debug("X: "   .. color.x)    -- also 1.0
+
+local pos = Vec(10, 5, 3)
+pos.y = 10                         -- modify in place
+```
+
+---
+
+## Rect
+
+`Rect` represents a 2D rectangle with an origin `(x, y)` and dimensions `(w, h)`. Used by the widget system for layout rects.
+
+### `Rect.Create()`
+
+Create a Rect with all components at zero.
+
+**Returns:** `Rect`
+
+---
+
+### `Rect.Create(x, y, w, h)`
+
+Create a Rect with the given origin and dimensions.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `x` | `number` | Top-left X position. |
+| `y` | `number` | Top-left Y position. |
+| `w` | `number` | Width. |
+| `h` | `number` | Height. |
+
+**Returns:** `Rect`
+
+---
+
+### `Rect.Create(srcRect)`
+
+Copy an existing Rect.
+
+**Returns:** `Rect`
+
+---
+
+### `Rect:ContainsPoint(x, y)`
+
+Check if a 2D point is inside this Rect.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `x` | `number` | Point X. |
+| `y` | `number` | Point Y. |
+
+**Returns:** `boolean` — `true` if inside.
+
+---
+
+### `Rect:OverlapsRect(otherRect)`
+
+Check if this Rect overlaps another.
+
+| Parameter | Type |
+|-----------|------|
+| `otherRect` | `Rect` |
+
+**Returns:** `boolean` — `true` if they overlap.
+
+---
+
+### `Rect:Clamp(other)`
+
+Clamp this Rect to lie within `other`.
+
+| Parameter | Type |
+|-----------|------|
+| `other` | `Rect` |
+
+---
+
+### Edge Accessors
+
+| Method | Description | Returns |
+|--------|-------------|---------|
+| `Rect:Top()` | Top Y position | `number` |
+| `Rect:Bottom()` | Bottom Y position | `number` |
+| `Rect:Left()` | Left X position | `number` |
+| `Rect:Right()` | Right X position | `number` |
+
+```lua
+local screenRect = self.panel:GetRect()
+local mouseX, mouseY = Input.GetMousePosition()
+
+if screenRect:ContainsPoint(mouseX, mouseY) then
+    Log.Debug("Mouse is over panel")
+end
+```

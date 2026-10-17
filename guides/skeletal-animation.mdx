@@ -1,0 +1,365 @@
+---
+title: "Skeletal Animation: Meshes, Clips, Retargeting"
+sidebarTitle: "Skeletal Animation"
+description: "Multi-section SkeletalMesh, reusable animation clips, Mecanim-style HumanoidAvatar retargeting, BoneMask layering, and BoneSockets for prop attachment."
+---
+
+Polyphase's skeletal animation system is organized into three independent layers that you can use in any combination. A **multi-section SkeletalMesh** keeps each character part in its own material slot. **SkeletalAnimationAsset** clips are keyed by bone name so one clip drives any compatible rig. **HumanoidAvatarAsset** maps a rig to standardized humanoid slots, enabling bake-time retargeting so a Mixamo run cycle plays on your custom robot — with no middleware.
+
+## Multi-Section SkeletalMesh
+
+A `SkeletalMesh` holds an array of named `SkeletalMeshSection`s on top of its shared vertex/index buffer. Each section is a contiguous index range with its own material assignment, allowing a single character to have independently swappable clothing, armor, or skin tones.
+
+### Importing a Multi-Part Character
+
+<Steps>
+  <Step title="Enable combined import">
+    In the import dialog for a `.glb`, `.fbx`, or `.gltf` file, enable **As Single Object** (`combineMeshes`). The importer collects every renderable primitive (skipping `UCX*`, `UBX*`, `USP*` collision helpers) and builds a **union** of bone names across every skinned primitive into a single shared skeleton.
+  </Step>
+  <Step title="Check the Sections panel">
+    Open the imported `SkeletalMesh` asset. The **Sections** panel lists every section with its name, triangle count, and an individual material picker. The asset also retains a legacy single `Material` slot used as a fallback when a section has no assigned material.
+  </Step>
+  <Step title="Assign per-section materials">
+    Click the material picker on any row to assign a `MaterialLite` or `MaterialBase` (Vulkan only) asset directly to that section.
+  </Step>
+</Steps>
+
+<Note>
+  Before this release, the combined importer picked the first skinned primitive as canonical and silently dropped weights for bones that only existed on later primitives. Accessories and clothing that animated correctly in Blender would appear rigidly attached at runtime. The new bone-superset walk handles this correctly.
+</Note>
+
+### Per-Instance Material Overrides
+
+On the `SkeletalMesh3D` node, the **Section Material Overrides** vector property accepts one material per section. The runtime resolution chain per slot is:
+
+1. Component override (`mSectionMaterialOverrides[i]`)
+2. Section's own material (on the asset)
+3. Legacy whole-mesh override (`mMaterialOverride`)
+4. Asset-default `mMaterial`
+5. Renderer default material
+
+```lua
+local mesh = LoadAsset("SK_Hero")
+print(mesh:GetNumSections())            -- 4
+print(mesh:GetSectionName(1))           -- "Body" (Lua 1-indexed)
+mesh:SetSectionMaterial(2, LoadAsset("M_Cape_Red"))
+
+local node = world:SpawnBasicNode(BASIC_SKELETAL_MESH)
+node:SetSkeletalMesh(mesh)
+print(node:GetNumMaterialSlots())                       -- 4
+node:SetMaterialSlot("Cape", LoadAsset("M_Cape_Blue"))  -- by section name
+node:SetMaterialSlot(1, LoadAsset("M_Body_Tanned"))     -- by slot index
+```
+
+### Backend Support
+
+All three rendering backends loop sections, binding the per-section material before each indexed draw range:
+
+| Platform | Draw call |
+|---|---|
+| **Vulkan** | `vkCmdDrawIndexed(firstIndex, indexCount)` per section |
+| **Wii / GameCube (GX)** | `GX_Begin / GX_End` per section with material bind |
+| **3DS (C3D)** | `C3D_DrawElements` per section — order must be `BindMaterial` → matrix uniforms → UV uniforms → draw (C3D's deferred state cache requires this; wrong order renders only the second section onward) |
+
+Shadow passes stay as a single full-mesh depth draw — material state is not needed for depth-only.
+
+---
+
+## SkeletalAnimationAsset
+
+A `SkeletalAnimationAsset` is a standalone, reusable bone-animation clip. Channels are keyed by **bone name** (not bone index) so the same asset can bind to multiple rigs. Each asset carries position / rotation / scale keyframes per channel, event tracks (`AnimEventTrack`), and source-skeleton metadata for retargeting.
+
+### Extracting Clips from a SkeletalMesh
+
+Right-click any `SkeletalMesh` asset → **Extract Animations…**. The modal lists every embedded clip with checkboxes plus options for **Prefix** (default `SA_`), **Overwrite existing**, and **Unique names**. **Extract Selected** / **Extract All** writes each chosen clip as a `SA_<MeshName>_<ClipName>` asset in the source mesh's directory, with full source-rig metadata for later retargeting.
+
+### Importing Animation-Only Files
+
+Mixamo and similar services export `.fbx` / `.glb` files that contain animation channels but no render mesh. Asset browser → **Import Asset → Import Animations**:
+
+1. Choose the file in the file picker.
+2. The modal shows every `aiAnimation` in the file with checkboxes.
+3. **Import Selected** / **Import All** generates standalone `SA_*` assets with source-bone metadata.
+
+### Playing External Clips on a SkeletalMesh3D
+
+The `SkeletalMesh3D` node's **Animation Assets** vector property accepts any number of `SkeletalAnimationAsset` references. `FindAnimation(name)` resolves in this order:
+
+1. Embedded animations on the assigned `SkeletalMesh`
+2. The mesh's `mAnimationLookupMesh` chain (legacy)
+3. External `Animation Assets` on the node
+
+```lua
+local hero = world:SpawnBasicNode(BASIC_SKELETAL_MESH)
+hero:SetSkeletalMesh(LoadAsset("SK_Hero"))
+
+-- External clips — could be Mixamo retargets, hand-authored clips, etc.
+hero:AddAnimationAsset(LoadAsset("SA_Walk"))
+hero:AddAnimationAsset(LoadAsset("SA_Run"))
+hero:AddAnimationAsset(LoadAsset("SA_JumpStart"))
+
+-- PlayAnimation resolves by clip name regardless of which list it lives in
+hero:PlayAnimation("Walk", true)
+```
+
+<Note>
+  An external `SkeletalAnimationAsset` with the same clip name as an embedded animation **overrides** the embedded one. This lets you patch shipped characters with updated clips without modifying the original mesh asset.
+</Note>
+
+---
+
+## Humanoid Avatars and Retargeting
+
+A `HumanoidAvatarAsset` maps a rig's bones to 21 standard humanoid slots (Hips, Spine, Chest, Neck, Head, L/R Shoulder/UpperArm/LowerArm/Hand, L/R UpperLeg/LowerLeg/Foot/Toes). With one avatar per rig you can bake any clip authored for one rig into a target-compatible clip for another.
+
+### Creating an Avatar
+
+<Steps>
+  <Step title="Create the asset">
+    Asset browser → **Create Asset → Humanoid Avatar**. Open the new asset and set **Reference Mesh** to the `SkeletalMesh` whose rig this avatar describes.
+  </Step>
+  <Step title="Auto-map">
+    Click **Auto-map from Reference**. The auto-mapper recognizes common rig conventions:
+    - **Mixamo**: `mixamorig:Hips`, `mixamorig:LeftArm`, etc.
+    - **ARP / Auto-Rig Pro**: `c_root.x`, `c_arm_fk.l`, etc.
+    - **Rigify**: `DEF-upper_arm.L`, `MCH-spine.001`, etc.
+    - **Blender suffix style**: `UpperArm.L`, `LowerLeg.R`, `Foot.L`
+    - Common variants: `LeftArm`, `Left_Arm`, `leftarm`, `upperarml`, `arm_l`, etc.
+  </Step>
+  <Step title="Fix red slots">
+    Validation chips show green "ok" / yellow "unset" / red "not in mesh". Click any red slot's text input and type the exact bone name from your rig. A stripped humanoid (e.g. a robot with no Spine/Chest) can leave those slots empty — retargeting skips them.
+  </Step>
+</Steps>
+
+### Baking a Retargeted Clip
+
+Right-click any `SkeletalAnimationAsset` → **Retarget…**. For multiple clips, right-click → **Retarget N Clips…**. The modal exposes:
+
+| Field | Description |
+|---|---|
+| Source Avatar | The avatar for the rig the clip was authored against. |
+| Target Avatar | The avatar for the rig you want the clip to play on. |
+| Output Name / Suffix | Asset name for the baked result. |
+| Mode | **Tier 1 — Name remap** or **Tier 2 — Reference-pose aware**. |
+| Avatar status panel | Live status for each avatar (mesh + slot count). |
+| Overwrite existing / Unique names | Asset collision toggles. |
+
+**Bake** writes a new SA asset next to the source clip. Its clip name is preserved (not suffixed) so `PlayAnimation("Walk", true)` works on both source and target rigs.
+
+### Tier 1 vs Tier 2
+
+<Tabs>
+  <Tab title="Tier 1 — Name Remap">
+    Copies keyframes verbatim and renames channels by slot. One frame of math per keyframe — fast and lossless. Use when source and target rigs have identical bind poses, axis conventions, and bone orientations.
+  </Tab>
+  <Tab title="Tier 2 — Reference-Pose Aware">
+    Full world-space retarget through both rigs' bind poses. Both avatars must have a **Reference Mesh** assigned. The math per keyframe is:
+
+    ```
+    worldDelta  = sourceWorldRot × inv(sourceWorldBindRot)  // what the animation did, in world space
+    targetWorld = worldDelta × targetWorldBindRot            // apply same delta to target's rest
+    targetLocal = inv(targetParentWorldRot) × targetWorld    // back to local space
+    ```
+
+    Bone-axis conventions cancel out because everything is computed in a common frame, fixing the classic "arms come out backwards" failure mode. Hips translation receives a uniform Y-ratio scale (`dstBindY / srcBindY`) so a tall Mixamo run on a stubby robot still strides correctly.
+  </Tab>
+</Tabs>
+
+<Warning>
+  Do not use Tier 2 if either avatar is missing a Reference Mesh — the retargeter has no bind pose to project through, falls back silently to name remap, and logs a diagnostic. Assign the Reference Mesh on both avatars before baking.
+</Warning>
+
+### End-to-End: Mixamo to Your Character
+
+<Steps>
+  <Step title="Import your character">Any rig — does not need to match Mixamo's bone names.</Step>
+  <Step title="Create HA_Hero">Point Reference Mesh at your mesh, hit Auto-map, fix any red slots.</Step>
+  <Step title="Import Mixamo">Import a Mixamo character and animation clips. Use FBX2glTF on the Mixamo FBX first if you're hitting Mixamo's 100× scale / 90° rotation issues.</Step>
+  <Step title="Create HA_Mixamo">Point Reference Mesh at the Mixamo skeleton, auto-map.</Step>
+  <Step title="Retarget each clip">Right-click → Retarget… → source `HA_Mixamo`, target `HA_Hero`, mode Tier 2, Bake.</Step>
+  <Step title="Drop baked clips into the scene">Add the `SA_*_Retargeted` assets to your character node's `Animation Assets` vector.</Step>
+  <Step title="Play">
+    ```lua
+    hero:PlayAnimation("Walk", true)
+    ```
+  </Step>
+</Steps>
+
+### Mixamo Export Checklist
+
+When exporting Mixamo from Blender (use FBX2glTF directly if possible):
+
+```
+File → Export → FBX (.fbx)
+
+Transform:
+  Scale:           1.00
+  Apply Scalings:  FBX All           ← critical
+  Forward:         -Z Forward
+  Up:              Y Up
+  ✓ Apply Unit
+  ✓ Use Space Transform
+  ☐ Apply Transform                  (leave OFF — Blender bug fuse)
+
+Armature:
+  ✓ Only Deform Bones
+  ☐ Add Leaf Bones
+
+Animation:
+  ✓ Baked Animation
+  ✓ Key All Bones
+  ☐ NLA Strips
+```
+
+`Apply Scalings = FBX All` bakes the 100× centimeter scale into bone offsets and keyframes.
+
+---
+
+## Bone Mask — Animation Layering
+
+Layer multiple animations on a single skeletal mesh by scoping each slot to a subset of bones.
+
+### Authoring a BoneMaskAsset
+
+<Steps>
+  <Step title="Create">Right-click in the asset browser → **New Asset → Bone Mask** (or View menu → **Bone Mask Editor**).</Step>
+  <Step title="Assign a target mesh">The target mesh is for authoring preview only. Masks are name-keyed, so any rig with matching bone names will resolve correctly at runtime.</Step>
+  <Step title="Include / exclude bones">Right-click bones in the tree to **Include** or **Exclude** subtrees. **Self Only** limits inclusion to a single bone without its descendants — useful for twist-bone tweaks.</Step>
+  <Step title="Preview">Pick an animation and hit Play to verify the mask follows the deforming pose in real time. Included bones are tinted bright green; excluded bones are dim grey.</Step>
+</Steps>
+
+Typical presets:
+
+| Mask | Include | Exclude |
+|---|---|---|
+| Upper Body | `Spine_01` | — |
+| Upper Body, no head | `Spine_01` | `Head` |
+| Lower Body | `Hips` | `Spine_01` |
+| Left Arm | `LeftShoulder` | — |
+| Head only | `Neck` | — |
+
+### Playing Masked Animations
+
+The blend system supports **8 simultaneous slots** per `SkeletalMesh3D`. Each slot holds one clip with its own weight, speed, mask, and layer mode.
+
+```lua
+-- Replace mode — masked-in bones blend with the slot's clip;
+-- masked-out bones retain whatever lower slots provided
+mesh:PlayAnimationMasked(clipName, slot, mask, loop, speed, weight)
+
+-- Additive mode — the clip is treated as a DELTA FROM BIND POSE;
+-- (clip - bind) × weight is added on top of the accumulator
+mesh:PlayAnimationAdditive(clipName, slot, mask, loop, speed, weight)
+```
+
+### A Complete Character Animation Pattern
+
+```lua
+-- In Tick: weighted locomotion blend on slots 0 and 1
+local runAlpha = Math.Clamp(self.speed / self.maxSpeed, 0, 1)
+self.mesh:PlayAnimation("Idle", true, 1, 1.0 - runAlpha, 0)
+self.mesh:PlayAnimation("Run",  true, 1, runAlpha, 1)
+
+-- On attack: one-shot masked Replace, self-removes when clip ends
+self.mesh:PlayAnimationMasked("Attack", 2, self.upperBodyMask, false, 1.0, 1.0)
+
+-- On hit: one-shot additive (clip authored as delta from bind pose)
+self.mesh:PlayAnimationAdditive("HitReact_add", 3, self.upperBodyMask, false, 2.0, 1.0)
+
+-- Aim hold/release: smooth weight fade
+self.mesh:PlayAnimationMasked("AimPose", 4, self.armsMask, true, 1.0, 0.0)
+self.mesh:FadeSlotWeight(4, 1.0, 0.15)   -- fade in
+-- On release:
+self.mesh:FadeSlotWeight(4, 0.0, 0.20)   -- fade out; slot self-removes
+```
+
+Slot management helpers:
+
+```lua
+mesh:SetSlotMask(slot, mask)             -- swap or clear mask on a live slot
+mesh:SetSlotWeight(slot, 0.5)            -- snap weight
+mesh:FadeSlotWeight(slot, 0.0, 0.25)     -- fade out over 0.25 s
+mesh:SetSlotLayerMode(slot, AnimLayerMode.Additive)
+```
+
+<Warning>
+  Never apply **Additive** mode to a full-pose clip. The math treats every bone's pose as a delta from bind, causing double-transformation. Use Replace mode with a mask for full-pose attacks. Use Additive only for clips authored specifically as offsets (usually named `_add` or `Additive`).
+</Warning>
+
+---
+
+## Bone Sockets — Attaching Props
+
+A **socket** is a named point on a rig: a bone plus a constant position/rotation/scale offset, stored on the `SkeletalMesh` asset. Author the placement once; every prop attached to that socket lands identically.
+
+### Quick Setup
+
+<Steps>
+  <Step title="Attach a prop to a bone">Drag your prop (e.g. a `StaticMesh3D` sword) under the character's `SkeletalMesh3D` in the outliner. Right-click the **skeletal mesh** node → **Attach Selected To Bone** → pick `hand_r` from the Bones submenu.</Step>
+  <Step title="Place it">Select the prop and use the translate/rotate gizmo to nudge it into the palm. Its transform is now relative to the bone.</Step>
+  <Step title="Promote to a socket">Right-click the prop → **Create Socket From Selection**. This bakes the offset onto the mesh asset as a named socket and zeroes the prop's own transform.</Step>
+  <Step title="Use the socket">Select a prop parented under the character and pick the socket from the **Attach Socket** dropdown in the Properties panel.</Step>
+</Steps>
+
+### Scripting Draw and Sheathe
+
+```lua
+function Player:Start()
+    self.sword:AttachToSocket(self.mesh, "Sheath_Back")
+
+    -- Gameplay notifies fire at normalized time even off-screen
+    self.mesh:SetAnimationUpdateMode(AnimationUpdateMode.AlwaysUpdateTime)
+
+    self.mesh:AddAnimationNotify("DrawSword", 0.4, function()
+        self.sword:SetAttachSocket("WeaponHand_R")
+    end)
+
+    self.mesh:AddAnimationNotify("SheatheSword", 0.6, function()
+        self.sword:SetAttachSocket("Sheath_Back")
+    end)
+end
+
+function Player:OnDrawPressed()
+    self.mesh:PlayAnimation("DrawSword", false)
+end
+```
+
+`AddAnimationNotify` fires once each time playback crosses the normalized point. It handles looping clips, reverse playback, and frames long enough to step over the threshold.
+
+### Effects at a Socket
+
+`GetSocketPosition` / `GetSocketRotation` return world space, letting you spawn effects at a socket without parenting there:
+
+```lua
+local pos = self.mesh:GetSocketPosition("Muzzle")
+local rot = self.mesh:GetSocketRotation("Muzzle")
+SpawnParticle(self.muzzleFlash, pos, rot)
+```
+
+Both methods accept bare bone names too, so `GetSocketPosition("hand_r")` works without authoring a socket first.
+
+<Warning>
+  The default `AnimationUpdateMode.OnlyUpdateWhenRendered` skips the animation update entirely for a frustum-culled mesh. An off-screen character will play its draw animation but the socket won't move. Call `SetAnimationUpdateMode(AnimationUpdateMode.AlwaysUpdateTime)` for any gameplay-critical notify. A warning is logged if you register a notify on a node that cannot fire it.
+</Warning>
+
+---
+
+## Troubleshooting
+
+<Accordion title="Retargeted animation doesn't play">
+  Open the retargeted SA asset's inspector and check **Channels (N)**.
+
+  | N | Meaning | Fix |
+  |---|---|---|
+  | 0 | Neither avatar mapped any slots that resolve in the source clip | Re-check both avatars' validation; fix red "not in mesh" slots |
+  | > 0 but plays nothing | Clip name mismatch (baked clip has a different name than what `PlayAnimation` calls) | Edit the **Clip Name** field, or re-bake with a recent engine build (new bakes preserve the source clip name) |
+  | > 0 but limbs wrong | Tier 1 used on rigs with different bind poses or bone axes | Switch to Tier 2; ensure both avatars have Reference Mesh assigned |
+</Accordion>
+
+<Accordion title="Only one section of my multi-part character renders on 3DS">
+  Ensure the material bind order follows `BindMaterial` → matrix uniforms → UV uniforms → draw for each section. Getting this wrong renders only the second section onward due to C3D's deferred state cache. File a bug with the asset if the issue persists.
+</Accordion>
+
+<Accordion title="Per-section material override doesn't apply">
+  Override slots are **section-index addressed** (1-based in Lua, 0-based in C++). If the mesh has 3 sections but the override vector only has 2 entries, slot 3 falls through to the asset default. Use `SetMaterialSlot` with the section name to avoid index confusion.
+</Accordion>

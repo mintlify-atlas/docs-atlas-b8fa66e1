@@ -1,0 +1,145 @@
+---
+title: "Windows Developer Environment Setup for Polyphase"
+sidebarTitle: "Windows"
+description: "Install Visual Studio 2022, Vulkan SDK 1.3.275.0, devkitPro toolchains, libogc2, and run prebuild.bat to set up Polyphase on Windows."
+---
+
+This guide walks you through setting up a complete Windows development environment for Polyphase Engine. Everything listed below is required unless marked optional — Polyphase always packages for GameCube, Wii, and 3DS, so the devkitPro toolchains are part of the baseline setup, not an optional extra.
+
+## Required Tools
+
+| Install | Needed for | Verify with |
+|---------|-----------|-------------|
+| **Visual Studio 2022 Community** with the "Desktop development with C++" workload | Everything (`Polyphase.sln`) | `Polyphase.sln` opens and builds `DebugEditor` |
+| **CMake** | libgit2 prebuild (`Tools\prebuild.bat`), native addons that ship a CMake project | `cmake --version` |
+| **Vulkan SDK 1.3.275.0** (LunarG) | Editor and every game build; `glslc` for shaders | `echo %VULKAN_SDK%` prints the install path; `glslc --version` |
+| **Python 3** on `PATH` | `Tools\prebuild.bat` asset stubs, Lua stub generator, 3DS 3D banners | `python --version` |
+| **devkitPro** base installer | Wii, GameCube, and 3DS toolchains (installed via pacman in the next step) | See devkitPro section below |
+| **`wii-dev`** (via devkitPro MSys2 pacman) | Packaging for **Wii** and **GameCube** — provides devkitPPC (`powerpc-eabi-g++`) | `/opt/devkitpro/devkitPPC/bin/powerpc-eabi-g++ --version` in MSys2 |
+| **`3ds-dev`** (via devkitPro MSys2 pacman) | Packaging for **Nintendo 3DS** — provides devkitARM (`arm-none-eabi-g++`) | `/opt/devkitpro/devkitARM/bin/arm-none-eabi-g++ --version` in MSys2 |
+| **`libogc2`**, `libogc2-libdvm`, `gamecube-tools-git` (via pacman) | Packaging for **GameCube** — GameCube uses libogc2, not the stock libogc | `ls /opt/devkitpro/libogc2/gamecube/lib` in MSys2 |
+| Android Studio with SDK Build Tools 34.0.0, NDK 25.2.9519653, CMake 3.22.1 *(optional)* | Packaging for Android | SDK Manager shows all three components |
+| Docker Desktop *(optional)* | Building Linux and console targets in the maintained container | `docker --version` |
+
+<Steps>
+
+### Pull Submodules
+
+Before building, make sure all Git submodules are initialised. Run this from the repository root:
+
+```bat
+git submodule update --init --recursive
+```
+
+### Download and Install Tools
+
+Install the following in order:
+
+1. **Visual Studio Community 2022** — Select the **Desktop development with C++** workload during installation.
+2. **[CMake](https://cmake.org/download/)** — Add to `PATH` during installation.
+3. **Vulkan SDK 1.3.275.0** (LunarG) — During installation, select **Shader Toolchain Debug Symbols - 64 bit** and deselect all other options.
+4. **Python 3** — Add `python.exe` to `PATH` during installation.
+5. **devkitPro base installer** — Follow the [devkitPro Getting Started wiki](https://devkitpro.org/wiki/Getting_Started). The GameCube/Wii/3DS toolchains are installed via pacman in the next step.
+
+### Install devkitPro Toolchains
+
+Open the **devkitPro MSys2** shell from the Start Menu (**devkitPro → MSys2**), then run each command below **separately**.
+
+First, trust the libogc2 package signing key:
+
+```bash
+pacman-key --recv-keys C8A2759C315CFBC3429CC2E422B803BA8AA3D7CE --keyserver keyserver.ubuntu.com
+```
+
+```bash
+pacman-key --lsign-key C8A2759C315CFBC3429CC2E422B803BA8AA3D7CE
+```
+
+Next, edit `C:\devkitPro\msys2\etc\pacman.conf` and add the following block **above** the existing `[dkp-libs]` entry. These two `Server` lines are mirrors of the same repository — both belong in the file:
+
+```ini
+[libogc2-devkitpro]
+Server = https://packages.libogc2.org/devkitpro/windows/$arch
+Server = https://packages.extremscorner.org/devkitpro/windows/$arch
+```
+
+Back in the MSys2 shell, sync and update:
+
+```bash
+pacman -Syuu
+```
+
+Then install the toolchains and libraries (accept overwriting if prompted):
+
+```bash
+pacman -S wii-dev 3ds-dev gamecube-tools-git libogc2 libogc2-libdvm
+```
+
+<Note>
+  `libogc2` provides only the GameCube/Wii **libraries**. `wii-dev` and `3ds-dev` are the meta-packages that pull in the actual compilers — devkitPPC (`powerpc-eabi-g++`) and devkitARM (`arm-none-eabi-g++`). Without them, GameCube/Wii/3DS packaging will fail partway through `make` with a missing-compiler error.
+</Note>
+
+### Verify Environment Variables
+
+The Makefiles fail immediately if these variables are missing from the environment that `make` runs in. Check them in the MSys2 shell:
+
+```bash
+echo $DEVKITPRO
+echo $DEVKITPPC
+echo $DEVKITARM
+```
+
+Expected output is paths like `/opt/devkitpro` and `/opt/devkitpro/devkitPPC`. Windows-style values (`C:\devkitPro\devkitPPC`) also work — either way the value must point at the toolchain root folder, **not** a `\bin` subfolder.
+
+If any variable prints empty, restart your computer. If it is still empty after a restart, re-run the devkitPro installer.
+
+### Verify Compilers
+
+Both commands should print a version string. Run them with the full path — the compiler `bin` folders are deliberately not on `PATH`, so a bare `powerpc-eabi-g++` printing "command not found" does not mean the install is broken.
+
+```bash
+/opt/devkitpro/devkitPPC/bin/powerpc-eabi-g++ --version
+```
+
+```bash
+/opt/devkitpro/devkitARM/bin/arm-none-eabi-g++ --version
+```
+
+### Run the Prebuild Script
+
+Build shaders, `libgit2`, and the `Standalone\Generated\` embedded-asset stubs by running `prebuild.bat` from the repository root. Requires Python 3 on `PATH`:
+
+```bat
+Tools\prebuild.bat
+```
+
+<Note>
+  The stub step writes minimal placeholders for `EmbeddedAssets.{h,cpp}`, `EmbeddedScripts.{h,cpp}`, and `AddonPlugins.cpp` only if they are missing. These files are gitignored and normally regenerated by the Editor's "Build Data" action, but a fresh clone needs them so `Standalone` compiles.
+</Note>
+
+### Open and Build in Visual Studio
+
+1. Open `Polyphase.sln`.
+2. Switch to the **`DebugEditor`** solution configuration.
+3. Set the **`Standalone`** project as the Startup Project (right-click → **Set as Startup Project**).
+4. In the debug settings for `Standalone`, change the **Working Directory** to `$(SolutionDir)`.
+5. Build and run `Standalone`.
+
+<Warning>
+  If you previously opened Visual Studio before installing the devkitPro toolchains, restart your computer to ensure the `DEVKITPRO`, `DEVKITPPC`, and `DEVKITARM` environment variables are picked up by the VS process.
+</Warning>
+
+</Steps>
+
+## Packaging a 3DS Installable (.cia)
+
+The plain **Nintendo 3DS** build target needs nothing beyond `3ds-dev` above. The **Nintendo 3DS (CIA)** target, which produces an installable HOME Menu title, requires additional tools:
+
+| Tool | Needed for | Where it comes from |
+|------|-----------|---------------------|
+| `makerom` | The `.cia` (required) | [3DSGuy/Project_CTR releases](https://github.com/3DSGuy/Project_CTR/releases), `makerom-v0.19.0-win_x86_64.zip` |
+| `bannertool` | HOME Menu banner and tune (optional) | [carstene1ns/3ds-bannertool releases](https://github.com/carstene1ns/3ds-bannertool/releases), `bannertool-1.2.3-windows.zip` |
+| `cwavtool` | DSP-ADPCM tune encoding (optional) | [PabloMK7/cwavtool releases](https://github.com/PabloMK7/cwavtool/releases), `cwavtool.zip` → `windows-x86_64\cwavtool.exe` |
+| Python 3.12 + pycgfx | 3D scene banners (optional) | [python.org](https://www.python.org/downloads/) and [skyfloogle/pycgfx](https://github.com/skyfloogle/pycgfx) |
+
+**Easiest path:** in the editor open **Preferences → External → Launchers**, scroll to **3DS CIA Tools**, and click **Download makerom + bannertool + cwavtool**. The archives are fetched from the release pages above into `%APPDATA%\PolyphaseEditor\Tools\3DS` and picked up immediately.
