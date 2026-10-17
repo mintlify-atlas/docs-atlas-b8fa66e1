@@ -1,7 +1,7 @@
 ---
-title: "Networking: HTTP, WebSockets, and Multiplayer"
+title: "Networking: HTTP, WebSockets, and Multiplayer in Polyphase"
 sidebarTitle: "Networking"
-description: "Use Polyphase's HTTP client, WebSocket client, and authoritative multiplayer system across all supported platforms including consoles and mobile."
+description: "Use Polyphase Engine's HTTP client, WebSocket client, and authoritative multiplayer system across all supported platforms including consoles and mobile."
 ---
 
 Polyphase ships a unified networking stack that works identically across Windows, Linux, macOS, GameCube, Wii, 3DS, and Android. It covers three distinct layers: an async HTTP/HTTPS client for REST APIs and asset downloads, a WebSocket client for real-time bidirectional messaging, and a UDP-based authoritative multiplayer system for session hosting, state replication, and remote procedure calls.
@@ -16,6 +16,7 @@ The HTTP client lives at `Engine/Source/Network/Http/HttpClient.h` and is availa
 |---|---|---|---|
 | Windows | WinHTTP | SChannel (system) | No external dependency |
 | Linux | libcurl via `dlopen` | System OpenSSL | `IsAvailable()` returns false if `libcurl.so.4` is missing |
+| macOS | libcurl via `dlopen` | System OpenSSL | Prefers Homebrew curl (`/opt/homebrew/opt/curl/`); override with `POLYPHASE_LIBCURL` |
 | 3DS | libctru `httpc` | Nintendo system stack | Linked via `-lctru` |
 | Wii / GameCube | libogc TCP + mbedTLS | Vendored mbedTLS | Requires `External/mbedtls/lib-{wii,gcn}/` and `External/CACerts/cacert.pem` |
 | Android | Stub | n/a | `IsAvailable()` returns false; calls fail cleanly |
@@ -242,6 +243,7 @@ The WebSocket client is **not** a replacement for the engine's UDP multiplayer (
 |---|---|---|
 | Windows | ✅ | ✅ via WinHTTP |
 | Linux | ✅ | ✅ with libcurl ≥ 7.86 |
+| macOS | ✅ | ✅ with libcurl ≥ 7.86 (Homebrew curl preferred) |
 | Web (WebGL2 / WebGPU) | ✅ | ✅ via Browser WebSocket |
 | Android | ✅ | ❌ |
 | 3DS | ✅ | ❌ |

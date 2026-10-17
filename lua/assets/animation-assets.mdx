@@ -1,7 +1,7 @@
 ---
-title: "Animation Assets — SkeletalAnimationAsset & SpriteAnimation Lua API"
+title: "Animation Assets — Polyphase Engine Lua API Reference"
 sidebarTitle: "Animation Assets"
-description: "Lua API for Polyphase animation assets: SkeletalAnimationAsset (clip name, duration, channels) and SpriteAnimation (frames, atlas grid, FPS, loop)."
+description: "Lua API for Polyphase animation assets: SkeletalAnimationAsset (clip name, duration, bone channels) and SpriteAnimation (frames, atlas grid, FPS, loop)."
 ---
 
 Polyphase provides two animation asset types. `SkeletalAnimationAsset` stores a standalone bone-animation clip decoupled from any specific mesh, enabling retargeting and cross-rig sharing. `SpriteAnimation` stores a sequence of texture frames (or an atlas-grid slice) for 2D sprite animation. Both inherit from [`Asset`](/lua/assets/asset).

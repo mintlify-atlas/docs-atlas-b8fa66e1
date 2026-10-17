@@ -1,7 +1,7 @@
 ---
 title: "Terrain, Voxels, Tiles, Shadows, and Environment"
 sidebarTitle: "Terrain & Voxels"
-description: "Polyphase environment: Terrain3D sculpting and splatmap painting, Voxel3D, TileMap2D, Vulkan shadows, Skybox, InstancedMesh3D, and baked occlusion culling."
+description: "Polyphase environment: Terrain3D sculpting and splatmaps, Voxel3D, TileMap2D, Vulkan shadows, skybox, InstancedMesh3D, and baked occlusion culling."
 ---
 
 Polyphase provides a full suite of environment construction tools — from large outdoor landscapes sculpted from heightmaps, to runtime-editable voxel structures, to grid-based 2D tile maps. Layered on top are rendering features: dynamic directional shadows on Vulkan, skybox support on all platforms, hardware-instanced mesh rendering with console fallbacks, and a baked PVS occlusion culling system that works identically on every target.
@@ -50,6 +50,7 @@ Each vertex stores 4 material weights packed as RGBA in vertex color (R = Slot 0
 | Height Scale | 10.0 | Height value multiplier |
 | Enable Atlas | false | Enable atlas-based texturing |
 | Tiles X / Y | 4 | Atlas grid dimensions |
+| Texture Tiling | 32.0 | Grid cells per texture repeat (controls how many cells per atlas tile repeat) |
 | Bake Resolution | 512 | Baked texture size (N×N) |
 
 ### Procedural Splatmap Generation
@@ -91,6 +92,14 @@ for x = 20, 40 do
 end
 
 terrain:RebuildMesh()
+
+-- Additional accessors
+local resX, resZ = terrain:GetResolution()
+local w, d      = terrain:GetWorldSize()
+local scale     = terrain:GetHeightScale()
+terrain:SetHeightScale(10.0)
+terrain:SetSnapGridSize(128.0)   -- snap to grid for tiling terrain chunks (0 = off)
+local snap = terrain:GetSnapGridSize()
 ```
 
 ### Performance by Platform
@@ -151,7 +160,8 @@ voxel:RebuildMesh()  -- optional; happens automatically on next tick
 | 0 | Air (not rendered) | 4 | Blue (Water) |
 | 1 | Light Gray (Stone) | 5 | Red |
 | 2 | Brown (Dirt) | 6 | Yellow |
-| 3 | Green (Grass) | 8+ | HSV-based rainbow |
+| 3 | Green (Grass) | 7 | Dark Gray |
+| — | — | 8+ | HSV-based rainbow |
 
 ### Platform Notes
 
@@ -220,33 +230,59 @@ The system is built around three pieces:
 ```lua
 -- Coordinate conversion
 local cellX, cellY = tileMap:WorldToCell(worldVec)
-local worldVec     = tileMap:CellCenterToWorld(cellX, cellY)
+local worldVec     = tileMap:CellToWorld(cellX, cellY)       -- cell origin
+local worldVec     = tileMap:CellCenterToWorld(cellX, cellY) -- cell center
 
--- Cell query
+-- Cell query / mutation
 local tileIdx = tileMap:GetTile(cellX, cellY)
 tileMap:SetTile(cellX, cellY, 3)
 tileMap:ClearTile(cellX, cellY)
+local occupied = tileMap:IsCellOccupied(cellX, cellY)
 
 -- Rich cell info
 local cell = tileMap:GetCell(cellX, cellY)
--- cell.tileIndex, cell.atlasX, cell.atlasY, cell.hasCollision, cell.tags
+-- cell fields: tileIndex, atlasX, atlasY, cellX, cellY,
+--              worldX, worldY, hasCollision, flags, tags
+
+-- Tile-definition queries
+local tags   = tileMap:GetTileTags(tileIdx)            -- string array
+local solid  = tileMap:HasTileTag(tileIdx, "solid")
+local ax, ay = tileMap:GetTileAtlasCoord(tileIdx)
 
 -- Region search
 local cells = tileMap:GetCellsInRect(x1, y1, x2, y2)
+local cells = tileMap:FindAllTiles(targetTileIdx)
 local cells = tileMap:FindAllTilesWithTag("ground")
 local minX, minY, maxX, maxY = tileMap:GetUsedBounds()
+local count = tileMap:CountTileUses(tileIdx)
+
+-- Closest-cell queries (sorted by distance; maxDist=0 means unbounded)
+local cell  = tileMap:GetClosestTile(worldVec)
+local cells = tileMap:GetClosestTilesWithTag("chest", worldVec, maxDist)
+local cells = tileMap:GetClosestTilesOfType(tileIdx, worldVec, maxDist)
+
+-- Neighborhood
+local cells = tileMap:GetNeighborCells(cellX, cellY)                   -- 4 cardinal
+local cells = tileMap:GetNeighborCells(cellX, cellY, true)             -- 8 with diagonals
 
 -- Collision
-local isSolid = tileMap:IsSolidAt(worldVec)
-local isSolid = tileMap:IsSolidCell(cellX, cellY)
+local isSolid  = tileMap:IsSolidAt(worldVec)
+local isSolid  = tileMap:IsSolidCell(cellX, cellY)
+local collInfo = tileMap:GetCollisionAt(worldVec)
+-- collInfo: { cellX, cellY, tileIndex, hasCollision, collisionType, rects={...} }
 
 -- Navigation
-local hit = tileMap:RaycastTiles(startWorld, endWorld)   -- DDA; stops at first solid cell
-local reachable = tileMap:GetReachableCells(startX, startY, 5)  -- BFS, max dist 5
+local hit      = tileMap:RaycastTiles(startWorld, endWorld)
+-- hit: { hit, cellX, cellY, worldX, worldY, tileIndex }
+-- Uses 2D DDA across cell space; stops at the first solid cell.
+local reachable = tileMap:GetReachableCells(startX, startY, maxDist)
+-- BFS bounded by Manhattan distance; capped at 4096 cells.
+-- Optional passTag: cells without the tag are treated as impassable.
 
 -- Bulk editing
 tileMap:FillRect(0, 0, 15, 15, 3)
-n = tileMap:ReplaceTile(3, 7)            -- returns count of replaced cells
+tileMap:ClearRect(0, 0, 15, 15)
+n = tileMap:ReplaceTile(3, 7)              -- returns count of replaced cells
 n = tileMap:ReplaceTilesWithTag("water", 4)
 ```
 
@@ -338,13 +374,13 @@ Skyboxes work on all platforms that support `StaticMesh3D` — Vulkan, GX, and C
 
 ### Usage
 
-```lua
--- In C++ or editor: add instances to an InstancedMesh3D node
-local data = MeshInstanceData.New()
-data.mPosition = Vec(10, 0, 5)
-data.mRotation = Vec(0, 45, 0)
-data.mScale    = Vec(1, 1, 1)
-instancedMesh:AddInstanceData(data)
+```cpp
+// Add instances to an InstancedMesh3D node (C++ or editor)
+MeshInstanceData data;
+data.mPosition = {10.0f, 0.0f, 5.0f};
+data.mRotation = {0.0f, 45.0f, 0.0f};
+data.mScale    = {1.0f, 1.0f, 1.0f};
+instancedMesh->AddInstanceData(data);
 ```
 
 ### Platform Behavior
@@ -357,6 +393,14 @@ instancedMesh:AddInstanceData(data)
 | Draw calls for 100 instances | 1 | ~N spatial cells | ~N spatial cells |
 
 **Unrolling:** the engine buckets instances into a spatial grid (default cell size 25 units), merges vertex data per cell into a batched `StaticMesh`, and spawns one `StaticMesh3D` child per cell. Set **Unrolled Cull Distance** for distance-based culling of unrolled cells.
+
+### Configurable Properties
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| Unrolled Cull Distance | Float | 0.0 | Distance at which unrolled cells are culled (0 = no culling) |
+| Unrolled Cell Size | Float | 25.0 | Size of the spatial grid cells used when unrolling (world units) |
+| Always Unroll | Bool | false | Force unrolling even on Vulkan platforms that support hardware instancing |
 
 ### When to Use Instancing
 
@@ -431,8 +475,13 @@ end
 ```lua
 Renderer.EnableOcclusionCulling(false)
 local n = Renderer.GetNumOcclusionCulled()
+local f = Renderer.GetNumFrustumCulled()
 mesh:EnableOccludee(true)
+mesh:EnableOccluder(true)
 if mesh:IsOccluder() then ... end
+if mesh:IsOccludee() then ... end
+world:IsOcclusionCullingEnabled()    -- bool
+world:IsOcclusionDataStale()         -- true if an occluder moved since last bake
 world:IsSeenByCamera(node)           -- bool
 world:GetSeenByCamera()              -- { Node3D, ... }
 world:GetSeenByCamera("Enemy")       -- filtered by one tag

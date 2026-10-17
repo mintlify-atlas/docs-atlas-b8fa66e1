@@ -1,5 +1,5 @@
 ---
-title: "Log, Debug, SignalBus, Math & LoadingMenu Lua API"
+title: "Log, Debugger, SignalBus, Math & LoadingMenu Lua API"
 sidebarTitle: "Log & Debug"
 description: "Log messages, use the Lua debugger, broadcast signals with SignalBus, run math utilities, and drive loading-screen transitions in Polyphase Engine."
 ---
@@ -452,14 +452,41 @@ Linearly interpolates between `a` and `b` by `alpha` in `[0, 1]`. **Alias:** `Ma
 
 ---
 
-### Math.Min / Math.Max
+### Math.Min
 
 ```lua
 min = Math.Min(a, b)
+```
+
+Returns the smaller of two numbers.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `a` | `integer\|number` | First number |
+| `b` | `integer\|number` | Second number |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `min` | `integer\|number` | The smaller value |
+
+---
+
+### Math.Max
+
+```lua
 max = Math.Max(a, b)
 ```
 
-Return the smaller or larger of two values.
+Returns the larger of two numbers.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `a` | `integer\|number` | First number |
+| `b` | `integer\|number` | Second number |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `max` | `integer\|number` | The larger value |
 
 ---
 
@@ -593,23 +620,88 @@ Rotates a yaw angle toward a 3D direction at a given angular speed. Useful for r
 
 ---
 
-### Random Number Generation
+### Math.SeedRand
 
 ```lua
-Math.SeedRand(seed)           -- seed the RNG
-random  = Math.Rand()         -- number in [0, 1]
-rand    = Math.RandRange(min, max)      -- number in [min, max]
-rand    = Math.RandRangeInt(min, max)   -- integer in [min, max]
-rand    = Math.RandRangeVec(min, max)   -- Vector in [min, max]
+Math.SeedRand(seed)
 ```
 
-| Function | Return type | Description |
-|----------|-------------|-------------|
-| `Math.SeedRand(seed)` | — | Seeds the RNG with an integer |
-| `Math.Rand()` | `number` | Random float in `[0, 1]` |
-| `Math.RandRange(min, max)` | `number` | Random float in `[min, max]` |
-| `Math.RandRangeInt(min, max)` | `integer` | Random integer in `[min, max]` |
-| `Math.RandRangeVec(min, max)` | `Vector` | Random vector, component-wise |
+Seeds the Math system's random number generator.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `seed` | `integer` | RNG seed |
+
+---
+
+### Math.Rand
+
+```lua
+random = Math.Rand()
+```
+
+Returns a random float between `0` and `1`.
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `random` | `number` | Random number in `[0, 1]` |
+
+---
+
+### Math.RandRange
+
+```lua
+rand = Math.RandRange(min, max)
+```
+
+Returns a random float in `[min, max]`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `min` | `number` | Minimum value |
+| `max` | `number` | Maximum value |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `rand` | `number` | Random number in `[min, max]` |
+
+---
+
+### Math.RandRangeInt
+
+```lua
+rand = Math.RandRangeInt(min, max)
+```
+
+Returns a random integer in `[min, max]`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `min` | `integer` | Minimum value |
+| `max` | `integer` | Maximum value |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `rand` | `integer` | Random integer in `[min, max]` |
+
+---
+
+### Math.RandRangeVec
+
+```lua
+rand = Math.RandRangeVec(min, max)
+```
+
+Returns a random `Vector` with each component in `[min, max]`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `min` | `Vector\|number` | Minimum value (component-wise) |
+| `max` | `Vector\|number` | Maximum value (component-wise) |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `rand` | `Vector` | Random vector |
 
 ```lua
 -- Random spawn spread

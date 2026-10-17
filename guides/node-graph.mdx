@@ -97,6 +97,7 @@ The engine ships with six domains. Each has a distinct color, a domain-specific 
     | Normal Map | Normal, Strength | Result |
 
     Also includes all Math nodes, all Value nodes, and Viewer.
+
   </Tab>
   <Tab title="Shader">
     **Color:** Blue `(0.2, 0.4, 0.8)` — **Output node:** `ShaderOutputNode`
@@ -111,6 +112,7 @@ The engine ships with six domains. Each has a distinct color, a domain-specific 
     | World Position | Position |
 
     Also includes all Math nodes, all Value nodes, and Viewer.
+
   </Tab>
   <Tab title="Procedural">
     **Color:** Orange `(0.8, 0.5, 0.1)` — **Output node:** `ProceduralOutputNode`
@@ -125,6 +127,7 @@ The engine ships with six domains. Each has a distinct color, a domain-specific 
     | Gradient | Position, Start, End | Color |
 
     Also includes all Math nodes, all Value nodes, and Viewer.
+
   </Tab>
   <Tab title="Animation">
     **Color:** Green `(0.2, 0.7, 0.3)` — **Output node:** `AnimationOutputNode`
@@ -139,6 +142,7 @@ The engine ships with six domains. Each has a distinct color, a domain-specific 
     | Anim Speed | Speed, Time | Scaled Time |
 
     Also includes Add, Subtract, Multiply, Divide, Lerp, Clamp, Float, Integer, Time, and Viewer.
+
   </Tab>
   <Tab title="FSM">
     **Color:** Purple `(0.6, 0.2, 0.7)` — **Output node:** `FSMOutputNode`
@@ -153,6 +157,7 @@ The engine ships with six domains. Each has a distinct color, a domain-specific 
     | Condition | Value A, Value B | Result (A > B) |
 
     Also includes Float, Integer, and Viewer.
+
   </Tab>
   <Tab title="SceneGraph">
     **Color:** Teal `(0.1, 0.6, 0.6)` — **Output node:** `SceneGraphOutputNode`
@@ -167,6 +172,7 @@ The engine ships with six domains. Each has a distinct color, a domain-specific 
     | Find Node | — | Found |
 
     Also includes Add, Subtract, Multiply, Float, Integer, Vector, and Viewer.
+
   </Tab>
 </Tabs>
 
@@ -234,6 +240,8 @@ All setters return `true` on success, `false` if the named input pin was not fou
 | `SetInputString(name, value)` | `string` |
 | `SetInputVector(name, value)` | `Vector` |
 | `SetInputColor(name, value)` | `Vector` (RGBA) |
+| `SetInputByte(name, value)` | `uint8` (C++ only) |
+| `SetInputAsset(name, asset)` | `Asset*` (C++ only) |
 
 ### Reading Outputs
 

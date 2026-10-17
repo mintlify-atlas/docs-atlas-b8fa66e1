@@ -1,10 +1,10 @@
 ---
-title: "Writing C# Scripts in Polyphase Engine"
+title: "Writing C# Game Scripts for Polyphase Engine Projects"
 sidebarTitle: "C# Scripting"
-description: "Write game logic in C# with Polyphase Engine: scripts transpile to Lua via Roslyn and run on every platform including consoles with no .NET runtime required."
+description: "Write game logic in C# with Polyphase Engine: scripts transpile to Lua via Roslyn and run on every platform including consoles with no .NET runtime needed."
 ---
 
-Polyphase Engine supports C# as a first-class scripting language alongside Lua. C# sources compile with the latest **Roslyn** compiler and transpile to Lua via a vendored [CSharp.lua](https://github.com/yanghuan/CSharp.lua), so C# scripts run on every platform the engine ships — desktop, Android, and all retro console targets — with **no .NET runtime in the shipped game**. The .NET SDK (version 8 or newer) is needed only while authoring. Generated `.lua` files are committed alongside the `.cs` sources so team members who don't touch C# never need the SDK.
+Polyphase Engine supports C# as a first-class scripting language alongside Lua. C# sources compile with the latest **Roslyn** compiler and transpile to Lua via a vendored [CSharp.lua](https://github.com/yanghuan/CSharp.lua), so C# scripts run on every platform the engine ships — desktop, Android, Web, and all retro console targets — with **no .NET runtime in the shipped game**. The .NET SDK (version 8 or newer) is needed only while authoring. Generated `.lua` files are committed alongside the `.cs` sources so team members who don't touch C# never need the SDK.
 
 ## Enabling C# Scripting
 
@@ -96,7 +96,7 @@ Engine objects are not C# objects — a `Node3D`, `Button`, or `MaterialLite` va
 | **Nodes** | `Node` → `Node3D` → `Primitive3D` → `Mesh3D` → `StaticMesh3D`, `SkeletalMesh3D`, `Camera3D`, `Spline3D`, lights, `Audio3D`, `Particle3D`, `TimelinePlayer`, … |
 | **Widgets** | `Widget` → `Quad`, `Text`, `Button`, `Canvas`, `Slider`, `InputField`, `CheckBox`, `ProgressBar`, `ComboBox`, `ScrollContainer`, `Window`, … |
 | **Assets** | `Asset` → `Texture`, `StaticMesh`, `SkeletalMesh`, `Material` → `MaterialLite`/`MaterialInstance`, `SoundWave`, `Font`, `Scene`, `ParticleSystem`, `DataAsset`, … |
-| **Statics** | `Engine`, `Input`, `PlayerInput`, `Audio`, `Network`, `Renderer`, `TimerManager`, `Tween`, `SignalBus`, `SaveData`, `AssetManager`, `Http`, `WebSocket`, `Gizmos`, `Log`, … |
+| **Statics** | `Engine`, `Input`, `PlayerInput`, `Audio`, `Network`, `Renderer`, `TimerManager`, `Tween`, `SignalBus`, `SaveData`, `AssetManager`, `Http`, `WebSocket`, `Serial`, `Gizmos`, `LoadingMenu`, `WindowManager`, `Log`, `Debugger`, … |
 | **Enums** | `AnchorMode`, `BlendMode`, `ShadingModel`, `Easing`, `NetFuncType`, `ButtonState`, `Key`, `Mouse`, `Gamepad`, … |
 
 `is`, `as`, and casts work on engine values and honor the engine's class hierarchy (the runtime queries the node/asset itself, like Lua's `node:Is("StaticMesh3D")`).

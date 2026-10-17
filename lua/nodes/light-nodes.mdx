@@ -1,7 +1,7 @@
 ---
-title: "Light, Camera, Audio & Particle Nodes Lua API"
+title: "Light, Camera, Audio & Particle — Polyphase Lua API"
 sidebarTitle: "Light & Camera Nodes"
-description: "Lua API for Polyphase light nodes (Point, Directional, Spot), Camera3D (projection, FOV, screen-to-world), Audio3D, and Particle3D."
+description: "Lua API for Polyphase light nodes (Point, Directional, Spot), Camera3D (projection, FOV, screen-to-world), Audio3D, and Particle3D nodes."
 ---
 
 This page covers four categories of 3D scene nodes: lights, cameras, audio sources, and particle systems. All inherit from [`Node3D`](/lua/nodes/node3d) and [`Node`](/lua/nodes/node).
@@ -578,6 +578,24 @@ Play a transient one-shot voice at this node's position without affecting the no
 ```lua
 function Enemy:OnFootstep()
     self.audio:PlayOneShot(LoadAsset("Sounds/SW_Footstep"), 1.0, 1.0, 0)
+end
+```
+
+---
+
+### `Audio3D` Signals
+
+`Audio3D` emits the following signal that scripts can connect to using `ConnectSignal`:
+
+| Signal | Emitted when |
+|--------|--------------|
+| `OnFinished` | The current `SoundWave` reaches the end of one play. Non-looping voices fire it once on natural end; looping voices fire it every wrap. User-initiated `StopAudio()` does **not** fire it. |
+
+Scripts can also define a callback function of the same name on the script table:
+
+```lua
+function MyAudioScript:OnFinished()
+    -- the sound finished playing on this Audio3D node
 end
 ```
 

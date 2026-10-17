@@ -1,5 +1,5 @@
 ---
-title: "Creating Native C++ Addons for Polyphase Engine"
+title: "Creating Native C++ Addons for Polyphase Engine Projects"
 sidebarTitle: "Native Addons"
 description: "Extend Polyphase Engine with C++ addons: register custom nodes, expose Lua bindings, build editor tools, and compile into final console or desktop builds."
 ---
@@ -39,7 +39,7 @@ The `package.json` file must include a `native` block to enable native code supp
         "sourceDir": "Source",
         "binaryName": "myaddon",
         "entrySymbol": "PolyphasePlugin_GetDesc",
-        "apiVersion": 3
+        "apiVersion": 9
     }
 }
 ```
@@ -286,7 +286,7 @@ The **Coin** example addon rotates `Node3D` objects continuously in C++ with no 
         "target": "engine",
         "sourceDir": "Source",
         "binaryName": "Coin",
-        "apiVersion": 3
+        "apiVersion": 9
     }
 }
 ```
@@ -326,7 +326,7 @@ The **Custom Debug Window** example creates a dockable ImGui window with `target
         "target": "editor",
         "sourceDir": "Source",
         "binaryName": "debugwindow",
-        "apiVersion": 3
+        "apiVersion": 9
     }
 }
 ```
@@ -354,7 +354,7 @@ Use the `nativePerPlatform` block to add platform-specific compiler and linker s
         "target": "engine",
         "sourceDir": "Source",
         "binaryName": "com.example.myaudio",
-        "apiVersion": 3
+        "apiVersion": 9
     },
     "nativePerPlatform": {
         "Windows": {

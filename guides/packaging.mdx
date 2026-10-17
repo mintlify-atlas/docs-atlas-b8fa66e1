@@ -49,6 +49,10 @@ Compilation uses Visual Studio: `devenv Polyphase.sln /Build "Release|x64" /Proj
 
 Built via `make`. Debug symbols are stripped after linking. Output is a `.elf` in `Packaged/Linux/`. Shaders are compiled with `compile.sh`.
 
+### macOS
+
+Built via `make`. After linking, `strip -S` removes debug symbols. A post-package step runs `MacBundlePackager::PostPackage`, which bundles the Mach-O binary, the loose content payload, and MoltenVK into a signed `Packaged/Mac/{ProjectName}.app`. macOS targets **cannot** be built through Docker — you must build natively on a Mac.
+
 ### GameCube
 
 Requires the **devkitPro** toolchain (PPC). On Windows, the build runs inside Docker automatically. Output is a `.dol` in `Packaged/GCN/`. All assets must use **Embedded Mode**.
@@ -95,7 +99,7 @@ When you click **Build**, the engine runs `ActionManager::BuildData()`. The step
   <Step title="Generate the Asset Registry">
     An `AssetRegistry.txt` file is written to `{PackagedDir}/{ProjectName}/`. It lists every cooked asset's type and path and is used by the runtime to discover assets without filesystem enumeration — critical on platforms like GameCube and 3DS.
 
-    ```
+    ```text
     StaticMesh,SM_Crate
     Texture,T_Grass
     Scene,SC_Level1

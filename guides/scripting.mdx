@@ -131,6 +131,19 @@ function Coin:OnCollision(thisNode, otherNode, impactPoint, impactNormal)
 end
 ```
 
+### `OwnerChanged()`
+
+Called in network multiplayer games whenever the owning host of this node changes. Use this to update local ownership state, re-enable player controls, or hand off authority-dependent logic.
+
+```lua
+function Pawn:OwnerChanged()
+    if self:IsLocallyControlled() then
+        -- This client now owns the pawn
+        Input.LockCursor(true)
+    end
+end
+```
+
 ---
 
 ## GatherProperties()
@@ -165,7 +178,12 @@ Set `array = true` to create an array property. In the editor the `+` button app
 | `DatumType.Asset` | Asset reference |
 | `DatumType.Byte` | Byte (0–255) |
 | `DatumType.Short` | Short integer |
-| `DatumType.Node` | Node reference |
+| `DatumType.Node` | Generic node reference |
+| `DatumType.Node3D` | 3D node reference (array-friendly; shows 3D nodes in the picker) |
+| `DatumType.Widget` | Widget node reference (array-friendly; shows widget nodes in the picker) |
+| `DatumType.Audio3D` | Audio3D node reference |
+| `DatumType.Table` | Lua table value |
+| `DatumType.Function` | Editor-only button — renders as a clickable button in the Inspector that calls the same-named method |
 
 ---
 

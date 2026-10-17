@@ -1,5 +1,5 @@
 ---
-title: "Audio & TimerManager Lua API — Polyphase Engine"
+title: "Audio & TimerManager Lua API — Polyphase Engine Guide"
 sidebarTitle: "Audio"
 description: "Play, stop, and update 2D/3D sounds, control master volume, analyze audio in real time, and schedule timed callbacks with TimerManager in Lua."
 ---
@@ -463,17 +463,98 @@ end
 
 ---
 
-### Audio.GetStreamRMS / GetStreamLoudness / GetStreamLoudnessDb / GetStreamFrequencies / GetStreamSpectrum
+### Audio.GetStreamRMS
 
-Streaming equivalents of the analysis functions above, indexed by `streamId` from `AUD_OpenStream` rather than voice index.
+```lua
+rms = Audio.GetStreamRMS(streamId)
+```
 
-| Function | Signature |
-|----------|-----------|
-| `GetStreamRMS` | `rms = Audio.GetStreamRMS(streamId)` |
-| `GetStreamLoudness` | `loudness = Audio.GetStreamLoudness(streamId)` |
-| `GetStreamLoudnessDb` | `dB = Audio.GetStreamLoudnessDb(streamId)` |
-| `GetStreamFrequencies` | `magnitude = Audio.GetStreamFrequencies(streamId, startHz, endHz)` |
-| `GetStreamSpectrum` | `bins = Audio.GetStreamSpectrum(streamId, startHz, endHz, numBins)` |
+RMS amplitude for a streaming voice. Same semantics as `GetRMS` but indexed by the `streamId` returned from `AUD_OpenStream`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `streamId` | `integer` | Streaming voice ID |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `rms` | `number` | RMS amplitude in `[0, 1]` |
+
+---
+
+### Audio.GetStreamLoudness
+
+```lua
+loudness = Audio.GetStreamLoudness(streamId)
+```
+
+Normalized `[0, 1]` perceptual loudness for a streaming voice.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `streamId` | `integer` | Streaming voice ID |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `loudness` | `number` | Normalized loudness in `[0, 1]` |
+
+---
+
+### Audio.GetStreamLoudnessDb
+
+```lua
+dB = Audio.GetStreamLoudnessDb(streamId)
+```
+
+Raw dBFS loudness for a streaming voice, clamped to `[-60, 0]`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `streamId` | `integer` | Streaming voice ID |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `dB` | `number` | Loudness in dBFS, clamped `[-60, 0]` |
+
+---
+
+### Audio.GetStreamFrequencies
+
+```lua
+magnitude = Audio.GetStreamFrequencies(streamId, startHz, endHz)
+```
+
+Average FFT band magnitude for a streaming voice.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `streamId` | `integer` | Streaming voice ID |
+| `startHz` | `number` | Lower edge of the band in Hz |
+| `endHz` | `number` | Upper edge of the band in Hz |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `magnitude` | `number` | Average band magnitude |
+
+---
+
+### Audio.GetStreamSpectrum
+
+```lua
+bins = Audio.GetStreamSpectrum(streamId, startHz, endHz, numBins)
+```
+
+Binned FFT spectrum for a streaming voice.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `streamId` | `integer` | Streaming voice ID |
+| `startHz` | `number` | Lower edge of the range in Hz |
+| `endHz` | `number` | Upper edge of the range in Hz |
+| `numBins` | `integer` | Number of output bins (1–1024) |
+
+| Return | Type | Description |
+|--------|------|-------------|
+| `bins` | `table` | Array of `number` magnitudes, length `numBins` |
 
 ---
 

@@ -1,7 +1,7 @@
 ---
-title: "Linux Developer Environment Setup for Polyphase"
+title: "Linux Setup — Polyphase Engine Development Environment"
 sidebarTitle: "Linux"
-description: "Install build essentials, Vulkan SDK 1.4.350.0, devkitPro toolchains, and libogc2 to compile and package Polyphase Engine on Linux."
+description: "Install build essentials, Vulkan SDK 1.4.350.0, devkitPro with wii-dev and 3ds-dev, and libogc2 to compile and package Polyphase Engine on Linux."
 ---
 
 This guide covers setting up a complete Linux development environment for Polyphase Engine. Everything listed below is required unless marked optional — Polyphase always packages for GameCube, Wii, and 3DS, so the devkitPro toolchains are part of the baseline setup.
@@ -217,6 +217,8 @@ The RPM target requires `rpmbuild` on `PATH`:
 ```bash
 # Debian/Ubuntu
 sudo apt install rpm
+# Fedora
+sudo dnf install rpm-build
 # Arch
 sudo pacman -S rpm-tools
 ```

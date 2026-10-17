@@ -1,5 +1,5 @@
 ---
-title: "macOS Developer Environment Setup for Polyphase"
+title: "macOS Setup — Polyphase Engine Development Environment"
 sidebarTitle: "macOS"
 description: "Install Xcode Command Line Tools, Vulkan SDK with MoltenVK, Homebrew tools, and devkitPro to build Polyphase on Apple Silicon and Intel Macs."
 ---
@@ -192,6 +192,44 @@ make -C Standalone -f Makefile_Mac_Editor -j$(sysctl -n hw.ncpu) MAC_ARCH=univer
   `lipo -archs <binary>` shows which slices a file contains.
 </Note>
 
+## Packaging a macOS App Bundle
+
+The **macOS (App Bundle)** build target compiles a Mach-O with `Makefile_Mac_Game` and wraps it into `Packaged/Mac/<Project>.app` with MoltenVK and the Vulkan loader inside `Contents/Frameworks`. It requires the same tools as building the editor (Xcode Command Line Tools + Vulkan SDK); nothing extra. macOS targets can only be built on a macOS host — the "Use Docker" option is disabled for them.
+
+Every bundle is at least ad-hoc signed so it runs on the machine that built it. For distribution, set a **Signing Identity** (`Developer ID Application: ...`) in the profile's Target Options, optionally enable **Notarize** with a keychain profile created by `xcrun notarytool store-credentials`, and tick **Create .dmg**. Details are in the [Desktop Platforms guide](/platforms/desktop).
+
+To ship the editor itself:
+
+```bash
+bash Installers/build_app_mac.sh      # produces dist/Polyphase.app
+bash Installers/build_dmg_mac.sh      # wraps it into dist/PolyphaseEditor-<version>-macos-<arch>.dmg
+```
+
+## Packaging a 3DS Installable (.cia)
+
+The plain **Nintendo 3DS** build target needs nothing beyond `3ds-dev` above. The **Nintendo 3DS (CIA)** target, which produces an installable HOME Menu title, requires additional tools that devkitPro does not ship. None are needed unless you use that target.
+
+| Tool | Needed for | Where it comes from |
+|------|-----------|---------------------|
+| `makerom` | The `.cia` (required) | [3DSGuy/Project_CTR releases](https://github.com/3DSGuy/Project_CTR/releases), `makerom-v0.19.0-macos_arm64.zip` (Intel Macs: `macos_x86_64` zip) |
+| `bannertool` | HOME Menu banner and tune (optional) | No macOS binary is published. Build from source: [carstene1ns/3ds-bannertool](https://github.com/carstene1ns/3ds-bannertool), `bannertool-1.2.3.tar.gz`, then `make` and set the path in Preferences |
+| `cwavtool` | DSP-ADPCM tune encoding (optional, experimental) | [PabloMK7/cwavtool releases](https://github.com/PabloMK7/cwavtool/releases), `cwavtool.zip` → `mac-x86_64/cwavtool` (runs under Rosetta on Apple Silicon) |
+| Python 3.12 + pycgfx | 3D scene banners (optional) | `brew install python@3.12` and [skyfloogle/pycgfx](https://github.com/skyfloogle/pycgfx) |
+
+**Easiest:** in the editor open **Preferences → External → Launchers**, scroll to **3DS CIA Tools**, and click **Download makerom + bannertool + cwavtool**. `makerom` and `cwavtool` are fetched from the release pages above into `~/Library/Application Support/PolyphaseEditor/Tools/3DS`, made executable, and picked up immediately (`bannertool` is skipped with a warning on macOS — see the table). Downloaded binaries are quarantined by Gatekeeper; if one refuses to run, `xattr -d com.apple.quarantine <tool>`.
+
+**Manual:** extract the binaries, `chmod +x makerom bannertool cwavtool`, and either copy them into `/opt/devkitpro/tools/bin`, put them somewhere on `PATH` such as `~/.local/bin`, or set the path fields in the same Preferences page.
+
+**3D banners** additionally need Python 3 with pip. Click **Install pycgfx** in the same Preferences page (it downloads pycgfx, pinned to a fixed commit, and runs `python3 -m pip install --user gltflib pillow`).
+
+## Where the Editor Keeps Its Files
+
+| What | Path |
+|------|------|
+| Preferences, hotkey and input presets, downloaded tools | `~/Library/Application Support/PolyphaseEditor/` |
+| Game saves when the project directory is read-only (e.g. inside a `.app`) | `~/Library/Application Support/<Project>/Saves/` |
+| Addon-recovery sentinel | `~/Library/Application Support/Polyphase/` |
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -199,6 +237,10 @@ make -C Standalone -f Makefile_Mac_Editor -j$(sysctl -n hw.ncpu) MAC_ARCH=univer
 | `Failed to find platform surface extension` / `No physical device found` | Export `VK_DRIVER_FILES` (see above) or install the SDK under `~/VulkanSDK` so the editor can find it. `vulkaninfo --summary` must list MoltenVK. |
 | `ERROR: VULKAN_SDK is not set` from `prebuild_mac.sh` or `make` | The shell did not load `~/.zshrc` (SSH, CI, a script). Export `VULKAN_SDK=$HOME/VulkanSDK/<ver>/macOS` explicitly. |
 | `dyld: Library not loaded: @rpath/libvulkan.1.dylib` | The editor was linked against a `VULKAN_SDK` that has since moved. Rebuild with the current `VULKAN_SDK`, or set `DYLD_LIBRARY_PATH=$VULKAN_SDK/lib`. |
+| Shaders fail to compile in `prebuild_mac.sh` | `VULKAN_SDK` must point at `~/VulkanSDK/<ver>/macOS`, not the version directory above it. Check `which glslc`. |
+| `MAC_ARCH ... cleaning ...` lines and a long rebuild | You changed the architecture. The Makefiles discard objects of the other arch on purpose. `MAC_ARCH must be native, arm64, x86_64 or universal` means a typo in the value. |
 | `powerpc-eabi-g++: command not found` when packaging | `wii-dev` is not installed, or the terminal was not restarted after installing devkitPro. Run `dkp-pacman -Q` to list what is installed. |
 | GameCube link errors about missing `libogc2` | Step 3 of the devkitPro section was skipped. The stock `libogc` from `wii-dev` is not enough for GameCube. |
+| `wss://` connections report "no WebSocket support" | Install Homebrew curl and export `POLYPHASE_LIBCURL` as described above. |
 | Gatekeeper blocks a downloaded editor or game | Ad-hoc signed builds are not notarized. Right-click → Open once, or `xattr -dr com.apple.quarantine <app>`. |
+| Debugging | `lldb Standalone/Build/Mac/PolyphaseEditor` from the repo root, or VS Code with the CodeLLDB extension pointing at the same binary with `cwd` set to the repo root. |

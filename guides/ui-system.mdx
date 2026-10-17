@@ -1,7 +1,7 @@
 ---
 title: "UI System: Widgets, Lua, and XML/CSS Layouts"
 sidebarTitle: "UI System"
-description: "Polyphase UI: Canvas, Button, Text, Quad — build HUDs via editor or Lua, or author XML/CSS declarative layouts with data binding and component composition."
+description: "Polyphase UI: Canvas, Button, Text, Quad — build HUDs in Lua or author XML/CSS declarative layouts with data binding and component composition."
 ---
 
 Polyphase's 2D UI is built on a hierarchy of **Widget** nodes. Every widget inherits from `Node`, so you create, parent, and manage widgets the same way you manage any other node in the scene tree. From a single `Quad` background to a fully declarative XML layout with CSS stylesheets, the system scales from quick HUDs to structured menus without changing your rendering pipeline.
@@ -481,6 +481,7 @@ Polyphase's XML/CSS system lets you define UI trees in markup. It maps directly 
 | `<polyrect>` | PolyRect | Vulkan only |
 | `<include src="other.xml" />` | *(component import)* | Subtree composition |
 | `<link href="style.css" />` | *(stylesheet)* | External CSS |
+| `<style>` | *(inline CSS)* | Inline CSS block applied to this document |
 
 ### CSS Property Reference
 
@@ -504,10 +505,16 @@ Polyphase's XML/CSS system lets you define UI trees in markup. It maps directly 
 | `top-left` / `top-center` / `top-right` | TopLeft / TopMid / TopRight |
 | `center-left` / `center` / `center-right` | MidLeft / Mid / MidRight |
 | `bottom-left` / `bottom-center` / `bottom-right` | BottomLeft / BottomMid / BottomRight |
+| `top-stretch` | TopStretch |
+| `bottom-stretch` | BottomStretch |
+| `left-stretch` | LeftStretch |
+| `right-stretch` | RightStretch |
+| `center-h-stretch` | MidHorizontalStretch |
+| `center-v-stretch` | MidVerticalStretch |
 | `full-stretch` | FullStretch |
-| `fill` | Fill |
-| `fill-horizontal` | FillHorizontal |
-| `fill-vertical` | FillVertical |
+| `fill` | Fill (zero-config: matches parent on both axes) |
+| `fill-horizontal` | FillHorizontal (zero-config X) |
+| `fill-vertical` | FillVertical (zero-config Y) |
 </Accordion>
 
 <Accordion title="Visual and text properties">
@@ -522,6 +529,9 @@ Polyphase's XML/CSS system lets you define UI trees in markup. It maps directly 
 | `text-align` | `left`, `center`, `right` | `SetHorizontalJustification()` |
 | `vertical-align` | `top`, `center`, `bottom` | `SetVerticalJustification()` |
 | `word-wrap: break-word` | — | `EnableWordWrap(true)` |
+| `rotation` | `N` (degrees) | `SetRotation()` |
+| `scale` | `N` | `SetScale(N, N)` |
+| `transform-origin` | `N` | `SetPivot()` |
 </Accordion>
 
 <Accordion title="Button state custom properties">
@@ -546,13 +556,21 @@ doc:SetData("maxScore", "999")
 doc:SetData("playerName", playerName)
 ```
 
-### Querying Widgets
+### Querying Widgets and Registering Callbacks
 
 ```lua
 local btn = doc:FindById("play-btn")          -- Widget or nil
 local items = doc:FindByClass("list-item")    -- table of Widgets
 local root = doc:GetRootWidget()
+
+-- Register event callbacks by element ID and event name
+doc:SetCallback("play-btn", "click", "OnPlayClicked")
+doc:SetCallback("quit-btn", "click", function(btn)
+    QuitGame()
+end)
 ```
+
+Event attributes on XML elements (`on-click`, `on-hover`, `on-press`, `on-release`) bind Lua function names at parse time. Use `doc:SetCallback(id, event, handler)` at runtime to register closures or change handlers dynamically after loading.
 
 ### Component Composition with `<include>`
 

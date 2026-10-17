@@ -1,5 +1,5 @@
 ---
-title: "Save Data: Persisting Game State Across Sessions"
+title: "Save Data: Persisting Game State Across Play Sessions"
 sidebarTitle: "Save Data"
 description: "Read and write typed key-value save data from Lua scripts, manage multiple save slots, and handle platform-specific storage on consoles, PC, and mobile."
 ---
@@ -70,15 +70,15 @@ SaveData.SetString("playerName", "Hero")
 SaveData.SetInt("health", 100)
 SaveData.SetFloat("playtime", 3.5)
 SaveData.SetBool("tutorialDone", false)
-SaveData.SetVector("spawnPoint", Vec3.New(0, 1, 0))
-SaveData.SetColor("hudColor", Vec3.New(1, 1, 1, 1))
+SaveData.SetVector("spawnPoint", Vec(0, 1, 0))
+SaveData.SetColor("hudColor", Vec(1, 1, 1, 1))
 
 -- Reading with defaults
 local name     = SaveData.GetString("playerName", "Unknown")
 local health   = SaveData.GetInt("health", 100)
 local playtime = SaveData.GetFloat("playtime", 0.0)
 local done     = SaveData.GetBool("tutorialDone", false)
-local spawn    = SaveData.GetVector("spawnPoint", Vec3.New(0, 0, 0))
+local spawn    = SaveData.GetVector("spawnPoint", Vec(0, 0, 0))
 ```
 
 ### Saving and Loading
@@ -128,7 +128,7 @@ function SaveGameManager:Start()
         SaveData.SetString("playerName", "Hero")
         SaveData.SetInt("health", 100)
         SaveData.SetFloat("playtime", 0.0)
-        SaveData.SetVector("spawnPoint", Vec3.New(0, 1, 0))
+        SaveData.SetVector("spawnPoint", Vec(0, 1, 0))
         SaveData.SetBool("tutorialDone", false)
         SaveData.Save(self.currentSlot)
         Log.Debug("Created new save: " .. self.currentSlot)
@@ -191,7 +191,7 @@ function SlotManager:LoadFromSlot(slotNumber)
     self.playerName = SaveData.GetString("playerName", "Hero")
     self.playtime   = SaveData.GetFloat("playtime", 0.0)
 
-    local pos = SaveData.GetVector("position", Vec3.New(0, 0, 0))
+    local pos = SaveData.GetVector("position", Vec(0, 0, 0))
     self:SetWorldPosition(pos)
     return true
 end
@@ -234,7 +234,7 @@ function SettingsManager:LoadSettings()
     self.sfxVolume   = SaveData.GetFloat("sfxVolume", 1.0)
     self.difficulty  = SaveData.GetInt("difficulty", 1)
     self.invertY     = SaveData.GetBool("invertY", false)
-    self.hudColor    = SaveData.GetColor("hudColor", Vec3.New(1, 1, 1, 1))
+    self.hudColor    = SaveData.GetColor("hudColor", Vec(1, 1, 1, 1))
 end
 
 function SettingsManager:SaveSettings()

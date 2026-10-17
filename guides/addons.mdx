@@ -1,7 +1,7 @@
 ---
-title: "Using and Creating Addons for Polyphase Engine"
+title: "Using and Creating Addons for Polyphase Engine Projects"
 sidebarTitle: "Addons"
-description: "Browse, install, and create Polyphase addons — content packs of assets and scripts that merge into existing projects and are distributed via GitHub."
+description: "Browse, install, and create Polyphase Engine addons — content packs of assets and scripts that merge into existing projects and are distributed via GitHub."
 ---
 
 Addons are content packs that add assets, scripts, and functionality to a project you are already working on. Unlike templates — which create new projects from scratch — addons **merge** their contents into an existing project. When a user installs an addon, its `Assets/` and `Scripts/` folders are copied into the project, existing files are never overwritten, and the addon's metadata files (`package.json`, `thumbnail.png`) are not copied.
@@ -41,7 +41,8 @@ Downloaded addons are cached locally:
 | Platform | Cache path |
 |----------|-----------|
 | Windows | `%APPDATA%\PolyphaseEditor\AddonCache\` |
-| Linux | `~/.config/PolyphaseEditor/AddonCache\` |
+| Linux | `~/.config/PolyphaseEditor/AddonCache/` |
+| macOS | `~/Library/Application Support/PolyphaseEditor/AddonCache/` |
 
 Each project tracks installed addons in `{ProjectDir}/Settings/installed_addons.json`, recording the addon ID, version, install date, and source repository URL.
 

@@ -115,7 +115,7 @@ Then create a DataAsset in the Asset Panel, set its **Script File** property to 
 ### Reading a DataAsset from Lua
 
 ```lua
-local stats = Asset.Load("DA_Goblin")
+local stats = LoadAsset("DA_Goblin")
 local health = stats:Get("health")
 local speed  = stats:Get("speed")
 ```
